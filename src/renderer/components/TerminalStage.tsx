@@ -8,6 +8,8 @@ export const TerminalStage: React.FC = () => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const bufferQueueRef = useRef<string[]>([]);
+  const flushTimerRef = useRef<number | null>(null);
   const [isRestarting, setIsRestarting] = useState(false);
 
   useEffect(() => {
@@ -57,17 +59,31 @@ export const TerminalStage: React.FC = () => {
         api.terminal.write(data);
       });
 
-      // Connect PTY output to terminal
+      // Connect PTY output to terminal with batched micro-rendering
       const unsubData = api.terminal.onData((data) => {
-        term.write(data);
+        bufferQueueRef.current.push(data);
+        if (flushTimerRef.current === null) {
+          const flushCallback = () => {
+            flushTimerRef.current = null;
+            if (terminalRef.current && bufferQueueRef.current.length > 0) {
+              const batched = bufferQueueRef.current.join("");
+              bufferQueueRef.current = [];
+              terminalRef.current.write(batched);
+            }
+          };
+          flushTimerRef.current = typeof requestAnimationFrame === "function"
+            ? requestAnimationFrame(flushCallback)
+            : window.setTimeout(flushCallback, 16);
+        }
       });
 
       // Clear terminal screen on project switch or clear event
       const unsubClear = api.terminal.onClear?.(() => {
+        bufferQueueRef.current = [];
         term.clear();
       });
 
-      // Handle resize
+      // Handle resize via container geometry
       const handleResize = () => {
         if (fitAddonRef.current && terminalRef.current) {
           try {
@@ -81,7 +97,16 @@ export const TerminalStage: React.FC = () => {
         }
       };
 
-      window.addEventListener("resize", handleResize);
+      // ResizeObserver directly attached to terminal container element
+      let resizeObserver: ResizeObserver | null = null;
+      if (typeof ResizeObserver !== "undefined" && containerRef.current) {
+        resizeObserver = new ResizeObserver(() => {
+          handleResize();
+        });
+        resizeObserver.observe(containerRef.current);
+      } else {
+        window.addEventListener("resize", handleResize);
+      }
 
       // Start PTY session
       api.terminal
@@ -96,8 +121,23 @@ export const TerminalStage: React.FC = () => {
       return () => {
         unsubData();
         unsubClear?.();
-        window.removeEventListener("resize", handleResize);
+        if (resizeObserver) {
+          resizeObserver.disconnect();
+        } else {
+          window.removeEventListener("resize", handleResize);
+        }
+        if (flushTimerRef.current !== null) {
+          if (typeof cancelAnimationFrame === "function") {
+            cancelAnimationFrame(flushTimerRef.current);
+          } else {
+            clearTimeout(flushTimerRef.current);
+          }
+          flushTimerRef.current = null;
+        }
+        bufferQueueRef.current = [];
         term.dispose();
+        terminalRef.current = null;
+        fitAddonRef.current = null;
       };
     } else {
       term.writeln("\r\n\x1b[31m[Cockpit Error] Desktop PTY bridge (window.cockpitApi) is offline.\x1b[0m");

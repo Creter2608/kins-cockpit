@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import type {
   LoopStateSnapshot,
   McpSnapshot,
@@ -184,7 +184,7 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  const handleRollback = async () => {
+  const handleRollback = useCallback(async () => {
     const api = window.cockpitApi;
     if (api) {
       const res = await api.loop.stepBack();
@@ -192,9 +192,9 @@ export const App: React.FC = () => {
         alert(res.message);
       }
     }
-  };
+  }, []);
 
-  const handleStepForward = async () => {
+  const handleStepForward = useCallback(async () => {
     const api = window.cockpitApi;
     if (api) {
       const res = await api.loop.stepForward();
@@ -202,9 +202,9 @@ export const App: React.FC = () => {
         alert(res.message);
       }
     }
-  };
+  }, []);
 
-  const handleReset = async () => {
+  const handleReset = useCallback(async () => {
     const api = window.cockpitApi;
     if (api) {
       const res = await api.loop.reset();
@@ -212,9 +212,9 @@ export const App: React.FC = () => {
         alert(res.message);
       }
     }
-  };
+  }, []);
 
-  const handleRunBenchmark = async () => {
+  const handleRunBenchmark = useCallback(async () => {
     const api = window.cockpitApi;
     if (api?.eval) {
       try {
@@ -224,7 +224,13 @@ export const App: React.FC = () => {
         console.error("[Cockpit] Benchmark run failed:", err);
       }
     }
-  };
+  }, []);
+
+  const handleRefreshHarnessEvents = useCallback(() => {
+    void window.cockpitApi?.harness?.getEvents?.().then((events) => {
+      if (events) setHarnessEvents(events);
+    });
+  }, []);
 
   const activeSubagentsCount = subagents.filter(
     (a) => a.status === "running" || a.status === "idle"
@@ -324,11 +330,7 @@ export const App: React.FC = () => {
         <div className={`flex-1 flex flex-col h-full overflow-hidden ${activeTab === "activity" ? "" : "hidden"}`}>
           <RunActivityPanel
             events={harnessEvents}
-            onRefresh={() => {
-              void window.cockpitApi?.harness?.getEvents?.().then((events) => {
-                if (events) setHarnessEvents(events);
-              });
-            }}
+            onRefresh={handleRefreshHarnessEvents}
           />
         </div>
 

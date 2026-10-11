@@ -28,13 +28,20 @@ export const SubagentSidebar: React.FC<SubagentSidebarProps> = ({ activities }) 
   const [selectedActivity, setSelectedActivity] = useState<SubagentActivity | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
 
-  // Single component timer to refresh running/idle elapsed durations every second
+  const hasActiveSubagents = activities.some(
+    (a) => a.status === "running" || a.status === "idle"
+  );
+
+  // Conditional timer: only ticks when at least one subagent needs elapsed duration updates
   useEffect(() => {
+    if (!hasActiveSubagents) {
+      return;
+    }
     const timer = setInterval(() => {
       setNow(Date.now());
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [hasActiveSubagents]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

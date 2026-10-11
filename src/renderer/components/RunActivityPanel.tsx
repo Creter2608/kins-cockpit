@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useDeferredValue } from "react";
 import type { SessionEvent } from "../../shared/harnessContracts.js";
 
 export interface RunActivityPanelProps {
@@ -6,24 +6,48 @@ export interface RunActivityPanelProps {
   readonly onRefresh?: () => void;
 }
 
+function safeStringify(data: unknown): string {
+  if (data === null || data === undefined) return "";
+  if (typeof data === "string") return data;
+  if (typeof data === "number" || typeof data === "boolean") return String(data);
+  try {
+    const seen = new WeakSet();
+    return (
+      JSON.stringify(data, (_key, value) => {
+        if (typeof value === "bigint") return value.toString();
+        if (typeof value === "object" && value !== null) {
+          if (seen.has(value)) {
+            return "[Circular]";
+          }
+          seen.add(value);
+        }
+        return value;
+      }) ?? ""
+    );
+  } catch {
+    return "";
+  }
+}
+
 export const RunActivityPanel: React.FC<RunActivityPanelProps> = ({ events, onRefresh }) => {
   const [filterSource, setFilterSource] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [selectedEventSeq, setSelectedEventSeq] = useState<number | null>(null);
 
   const filteredEvents = useMemo(() => {
+    const q = deferredSearchQuery.toLowerCase();
+    if (!q) {
+      return filterSource === "all" ? events : events.filter((ev) => ev.source === filterSource);
+    }
     return events.filter((ev) => {
       if (filterSource !== "all" && ev.source !== filterSource) {
         return false;
       }
-      if (searchQuery.trim().length > 0) {
-        const q = searchQuery.toLowerCase();
-        const text = `${ev.kind} ${ev.source} ${ev.stepId ?? ""} ${JSON.stringify(ev.data)}`.toLowerCase();
-        return text.includes(q);
-      }
-      return true;
+      const combined = `${ev.kind} ${ev.source} ${ev.stepId ?? ""} ${safeStringify(ev.data)}`.toLowerCase();
+      return combined.includes(q);
     });
-  }, [events, filterSource, searchQuery]);
+  }, [events, filterSource, deferredSearchQuery]);
 
   const selectedEvent = useMemo(() => {
     return events.find((e) => e.sequence === selectedEventSeq) ?? null;

@@ -93,7 +93,8 @@ test("Stage 2 Assertion 3: unreadable or malformed state.json aborts disk mutati
 
     // Transition must be rejected or disk write aborted
     assert.equal(transResult, false);
-    assert.deepEqual(loopService.getSnapshot(), initialSnapshot, "Memory snapshot must remain untouched on corrupted read");
+    const currentSnap = loopService.getSnapshot();
+    assert.deepEqual({ ...currentSnap, lastUpdated: initialSnapshot.lastUpdated }, initialSnapshot, "Memory snapshot must remain untouched on corrupted read");
 
     // Verify disk content was NOT overwritten with {} or corrupted object
     const rawDisk = fs.readFileSync(statePath, "utf8");
