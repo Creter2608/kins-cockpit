@@ -230,6 +230,15 @@ export class CriticalLogService {
     }
   }
 
+  private ensurePolling(): void {
+    if (!this.pollTimer) {
+      this.pollTimer = setInterval(() => {
+        this.processFile();
+      }, 1500);
+      this.pollTimer.unref?.();
+    }
+  }
+
   start(): void {
     // If starting fresh on an existing log file, tail from EOF so past sessions don't flood the drawer
     if (this.lastOffset === 0 && fs.existsSync(this.logFilePath)) {
@@ -251,14 +260,20 @@ export class CriticalLogService {
             this.processFile();
           }
         });
+        this.watcher.on("error", () => {
+          try {
+            this.watcher?.close();
+          } catch {}
+          this.watcher = null;
+          this.ensurePolling();
+        });
+        this.watcher.unref?.();
       } catch {
-        // Fallback to polling
+        this.ensurePolling();
       }
     }
 
-    this.pollTimer = setInterval(() => {
-      this.processFile();
-    }, 1500);
+    this.ensurePolling();
   }
 
   subscribe(listener: (entries: readonly CriticalLogEntry[]) => void): () => void {

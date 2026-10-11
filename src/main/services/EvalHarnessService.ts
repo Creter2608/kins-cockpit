@@ -54,16 +54,29 @@ export class EvalHarnessService {
   }
 
   resolveRunnerPath(): string | null {
-    const localRunner = path.resolve(this.projectRoot, "scripts", "harness", "runner.mjs");
-    if (fs.existsSync(localRunner)) {
-      return localRunner;
-    }
     const appRoot = this.resolveDefaultAppRoot();
     const appRunner = path.resolve(appRoot, "scripts", "harness", "runner.mjs");
-    if (fs.existsSync(appRunner)) {
-      return appRunner;
+    if (!fs.existsSync(appRunner)) {
+      return null;
     }
-    return null;
+    try {
+      const real = fs.realpathSync(appRunner);
+      let expectedCanonical: string;
+      try {
+        expectedCanonical = fs.realpathSync(appRoot);
+      } catch {
+        expectedCanonical = path.resolve(appRoot);
+      }
+      const expectedRunner = path.resolve(expectedCanonical, "scripts", "harness", "runner.mjs");
+      // Reject redirects / symlinks pointing outside trusted application assets
+      if (path.resolve(real) !== expectedRunner && !real.startsWith(expectedCanonical + path.sep)) {
+        return null;
+      }
+      return real;
+    } catch {
+      // Fail closed: canonicalization failure must never return an unchecked path
+      return null;
+    }
   }
 
   getSnapshot(): EvalHarnessSnapshot {

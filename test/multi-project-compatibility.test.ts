@@ -87,7 +87,7 @@ test("RollbackService: returns null resolution and graceful failure if neither p
   }
 });
 
-test("EvalHarnessService: resolves local runner if present in project scripts/harness/runner.mjs", () => {
+test("EvalHarnessService: rejects untrusted local runner in external project and binds canonical app runner", () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-local-"));
   const appDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-app-"));
   try {
@@ -98,14 +98,15 @@ test("EvalHarnessService: resolves local runner if present in project scripts/ha
 
     const appHarnessDir = path.join(appDir, "scripts", "harness");
     fs.mkdirSync(appHarnessDir, { recursive: true });
-    fs.writeFileSync(path.join(appHarnessDir, "runner.mjs"), "// app runner", "utf-8");
+    const appRunner = path.join(appHarnessDir, "runner.mjs");
+    fs.writeFileSync(appRunner, "// app runner", "utf-8");
 
     const service = new EvalHarnessService(tempDir);
     service.setAppRootForTesting(appDir);
 
     const resolved = service.resolveRunnerPath();
     assert.ok(resolved !== null);
-    assert.equal(path.resolve(resolved), path.resolve(localRunner));
+    assert.equal(path.resolve(resolved), path.resolve(appRunner));
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
     fs.rmSync(appDir, { recursive: true, force: true });

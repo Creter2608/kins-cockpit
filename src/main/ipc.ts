@@ -155,7 +155,7 @@ export function registerIpcHandlers(window: BrowserWindow, services: ServiceCont
   ipcMain.handle("loop:stepBack", async () => {
     const res = await services.rollback.executeRollback();
     if (!res.success) {
-      return services.loop.stepBack();
+      return res;
     }
     return res;
   });
@@ -163,7 +163,7 @@ export function registerIpcHandlers(window: BrowserWindow, services: ServiceCont
   ipcMain.handle("loop:rollback", async () => {
     const res = await services.rollback.executeRollback();
     if (!res.success) {
-      return services.loop.stepBack();
+      return res;
     }
     return res;
   });

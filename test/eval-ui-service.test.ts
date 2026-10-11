@@ -213,6 +213,7 @@ process.exit(0);
   fs.writeFileSync(runnerPath, mockRunnerCode, "utf-8");
 
   const service = new EvalHarnessService(tempDir);
+  service.setAppRootForTesting(tempDir);
   try {
     await service.start();
     assert.equal(service.getSnapshot().status, "idle");
@@ -311,6 +312,7 @@ process.exit(0);
   fs.writeFileSync(runnerPath, mockRunnerCode, "utf-8");
 
   const service = new EvalHarnessService(tempDir);
+  service.setAppRootForTesting(tempDir);
   try {
     await service.start();
     const finalSnap = await service.runBenchmark();
@@ -345,6 +347,7 @@ process.exit(0);
   fs.writeFileSync(runnerPath, mockRunnerCode, "utf-8");
 
   const service = new EvalHarnessService(tempDir);
+  service.setAppRootForTesting(tempDir);
   try {
     await service.start();
     const finalSnap = await service.runBenchmark("release-base-v2");

@@ -353,16 +353,37 @@ export class LoopStateService {
     return this.lastValidSnapshot;
   }
 
+  private ensurePolling(): void {
+    if (!this.pollTimer) {
+      this.pollTimer = setInterval(() => {
+        this.readState();
+      }, 1500);
+      this.pollTimer.unref?.();
+    }
+  }
+
+  private readExistingStateFileForMutation(): Record<string, any> | null {
+    try {
+      const fileContent = fs.readFileSync(this.stateFilePath, "utf-8");
+      const parsed = JSON.parse(fileContent);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return null;
+      }
+      return parsed as Record<string, unknown>;
+    } catch (err: any) {
+      if (err && (err.code === "ENOENT" || (err.syscall === "open" && err.code === "ENOENT"))) {
+        return {};
+      }
+      return null;
+    }
+  }
+
   updateTestSummary(summary: LoopTestSummary): void {
     try {
       this.readState();
-      let stateData: Record<string, unknown> = {};
-      if (fs.existsSync(this.stateFilePath)) {
-        try {
-          stateData = JSON.parse(fs.readFileSync(this.stateFilePath, "utf-8")) as Record<string, unknown>;
-        } catch {
-          stateData = {};
-        }
+      const stateData = this.readExistingStateFileForMutation();
+      if (stateData === null) {
+        return;
       }
 
       const updatedState = {
@@ -426,13 +447,9 @@ export class LoopStateService {
   updateArchitecturalCompliance(compliance: ArchitecturalCompliance): void {
     try {
       this.readState();
-      let stateData: Record<string, unknown> = {};
-      if (fs.existsSync(this.stateFilePath)) {
-        try {
-          stateData = JSON.parse(fs.readFileSync(this.stateFilePath, "utf-8")) as Record<string, unknown>;
-        } catch {
-          stateData = {};
-        }
+      const stateData = this.readExistingStateFileForMutation();
+      if (stateData === null) {
+        return;
       }
 
       const updatedState = {
@@ -475,13 +492,9 @@ export class LoopStateService {
   updateAudit(audit: AuditRecord): void {
     try {
       this.readState();
-      let stateData: Record<string, unknown> = {};
-      if (fs.existsSync(this.stateFilePath)) {
-        try {
-          stateData = JSON.parse(fs.readFileSync(this.stateFilePath, "utf-8")) as Record<string, unknown>;
-        } catch {
-          stateData = {};
-        }
+      const stateData = this.readExistingStateFileForMutation();
+      if (stateData === null) {
+        return;
       }
 
       const updatedState = {
@@ -517,13 +530,9 @@ export class LoopStateService {
   updateResourceUsage(usage: Partial<ResourceUsage>): void {
     try {
       this.readState();
-      let stateData: Record<string, unknown> = {};
-      if (fs.existsSync(this.stateFilePath)) {
-        try {
-          stateData = JSON.parse(fs.readFileSync(this.stateFilePath, "utf-8")) as Record<string, unknown>;
-        } catch {
-          stateData = {};
-        }
+      const stateData = this.readExistingStateFileForMutation();
+      if (stateData === null) {
+        return;
       }
 
       const curUsage = this.lastValidSnapshot.resourceUsage || { ...EMPTY_RESOURCE_USAGE };
@@ -946,13 +955,9 @@ export class LoopStateService {
         return true;
       }
 
-      let stateData: any = {};
-      if (fs.existsSync(this.stateFilePath)) {
-        try {
-          stateData = JSON.parse(fs.readFileSync(this.stateFilePath, "utf-8"));
-        } catch {
-          stateData = {};
-        }
+      const stateData = this.readExistingStateFileForMutation();
+      if (stateData === null) {
+        return false;
       }
 
       const nextTransitions = (Number(stateData.usage?.transitions) || current.usage.transitions) + 1;
@@ -1168,15 +1173,19 @@ export class LoopStateService {
           this.readState();
         }
       });
+      this.watcher.on("error", () => {
+        try {
+          this.watcher?.close();
+        } catch {}
+        this.watcher = null;
+        this.ensurePolling();
+      });
       this.watcher.unref?.();
     } catch {
-      // Fallback to polling if fs.watch fails
+      this.ensurePolling();
     }
 
-    this.pollTimer = setInterval(() => {
-      this.readState();
-    }, 1500);
-    this.pollTimer.unref?.();
+    this.ensurePolling();
   }
 
   subscribe(listener: (snapshot: LoopStateSnapshot) => void): () => void {

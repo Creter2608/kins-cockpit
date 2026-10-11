@@ -1,7 +1,8 @@
-import { app, BrowserWindow } from "electron";
+import { isAllowedNavigation } from "./navigation.js";
+import { app, BrowserWindow, session } from "electron";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { PtyService } from "./services/PtyService.js";
 import { LoopStateService } from "./services/LoopStateService.js";
 import { McpMonitorService } from "./services/McpMonitorService.js";
@@ -64,6 +65,31 @@ providerCapacityService.subscribe((capacities) => {
   telemetryService.updateProviderCapacity(capacities);
 });
 
+function setupSecurityHeaders(): void {
+  const isDev = !app.isPackaged && !!process.env.VITE_DEV_SERVER_URL;
+  let devWs = "";
+  if (isDev && process.env.VITE_DEV_SERVER_URL) {
+    try {
+      const devUrl = new URL(process.env.VITE_DEV_SERVER_URL);
+      devWs = " ws://" + devUrl.host + " wss://" + devUrl.host + " " + devUrl.origin;
+    } catch {}
+  }
+  const csp = isDev
+    ? "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self'" + devWs + "; object-src 'none'; base-uri 'self'; frame-src 'none'; frame-ancestors 'none';"
+    : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-src 'none'; frame-ancestors 'none';";
+
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    const responseHeaders = { ...details.responseHeaders };
+    for (const key of Object.keys(responseHeaders)) {
+      if (key.toLowerCase() === "content-security-policy") {
+        delete responseHeaders[key];
+      }
+    }
+    responseHeaders["Content-Security-Policy"] = [csp];
+    callback({ responseHeaders });
+  });
+}
+
 async function createWindow(): Promise<void> {
   if (!harnessService) {
     harnessService = new HarnessService(
@@ -115,16 +141,21 @@ async function createWindow(): Promise<void> {
   });
 
   // Security Invariants: Deny opening new windows and restrict navigation
+  const isDev = !app.isPackaged && !!process.env.VITE_DEV_SERVER_URL;
+  const devServerUrl = isDev ? process.env.VITE_DEV_SERVER_URL! : null;
+  const indexPath = path.resolve(__dirname, "../../renderer/index.html");
+  const allowedEntryUrl = devServerUrl ?? pathToFileURL(indexPath).href;
+
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   mainWindow.webContents.on("will-navigate", (event, navigationUrl) => {
-    const devUrl = process.env.VITE_DEV_SERVER_URL;
-    if (devUrl && navigationUrl.startsWith(devUrl)) {
-      return;
+    if (!isAllowedNavigation(navigationUrl, allowedEntryUrl)) {
+      event.preventDefault();
     }
-    if (navigationUrl.startsWith("file://")) {
-      return;
+  });
+  mainWindow.webContents.on("will-frame-navigate", (event) => {
+    if (!event.isMainFrame || !isAllowedNavigation(event.url, allowedEntryUrl)) {
+      event.preventDefault();
     }
-    event.preventDefault();
   });
 
   // Diagnostics for preload & renderer loading
@@ -180,12 +211,10 @@ async function createWindow(): Promise<void> {
     }
   });
 
-  // Check if running in dev mode or prod
-  const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+  // Load window entry URL
   if (devServerUrl) {
     void mainWindow.loadURL(devServerUrl);
   } else {
-    const indexPath = path.resolve(__dirname, "../../renderer/index.html");
     mainWindow.loadFile(indexPath).catch((err) => {
       console.error("Failed to load index.html:", err);
     });
@@ -204,6 +233,7 @@ async function createWindow(): Promise<void> {
 }
 
 app.whenReady().then(() => {
+  setupSecurityHeaders();
   createWindow();
 
   app.on("activate", () => {
