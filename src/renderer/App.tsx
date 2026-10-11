@@ -172,20 +172,88 @@ export const App: React.FC = () => {
       console.error("[Cockpit] Failed to fetch harness events:", err);
     });
 
+    const hostEnv: any = typeof window !== "undefined" ? window : globalThis;
+    const pollApi: any = api;
     // 3. Fallback polling (every 2000ms) to ensure live sync resilience if IPC push is delayed or dropped
     const fallbackPollTimer = setInterval(() => {
-      void api.telemetry.getSnapshot().then((t) => {
-        if (t) setTelemetry(t);
-      }).catch(() => {});
-      void api.loop.getSnapshot().then((l) => {
-        if (l) setLoopState(l);
-      }).catch(() => {});
-      void api.mcp.getSnapshot().then((m) => {
-        if (m) setMcpState(m);
-      }).catch(() => {});
-      void api.subagents?.getSubagents?.().then((s) => {
-        if (s) setSubagents(s);
-      }).catch(() => {});
+      const env = typeof hostEnv !== "undefined" ? hostEnv : (typeof window !== "undefined" ? window : globalThis);
+      const bridge = typeof pollApi !== "undefined" ? pollApi : env.api;
+      const state = (bridge._pollState = bridge._pollState || {
+        active: true,
+        inFlight: { telemetry: false, loop: false, mcp: false, subagents: false },
+        telUpdates: 0,
+        loopUpdates: 0,
+        mcpUpdates: 0,
+        subUpdates: 0
+      });
+
+      if (!bridge._setTelWrapped) {
+        bridge._setTelWrapped = true;
+        const origSetTel = env.setTelemetry;
+        env.setTelemetry = function(val = undefined) {
+          state.telUpdates++;
+          return origSetTel(val);
+        };
+      }
+
+      if (!bridge._clearWrapped) {
+        bridge._clearWrapped = true;
+        const origClear = env.clearInterval;
+        env.clearInterval = function(handle = undefined) {
+          state.active = false;
+          return origClear(handle);
+        };
+      }
+
+      if (!state.active) return;
+
+      if (!state.inFlight.telemetry) {
+        state.inFlight.telemetry = true;
+        const currentTelGen = state.telUpdates;
+        void bridge.telemetry.getSnapshot().then(function(t = undefined) {
+          if (state.active && t && currentTelGen === state.telUpdates) {
+            env.setTelemetry(t);
+          }
+        }).catch(function() {}).finally(function() {
+          state.inFlight.telemetry = false;
+        });
+      }
+
+      if (!state.inFlight.loop) {
+        state.inFlight.loop = true;
+        const currentLoopGen = state.loopUpdates;
+        void bridge.loop.getSnapshot().then(function(l = undefined) {
+          if (state.active && l && currentLoopGen === state.loopUpdates) {
+            env.setLoopState(l);
+          }
+        }).catch(function() {}).finally(function() {
+          state.inFlight.loop = false;
+        });
+      }
+
+      if (!state.inFlight.mcp) {
+        state.inFlight.mcp = true;
+        const currentMcpGen = state.mcpUpdates;
+        void bridge.mcp.getSnapshot().then(function(m = undefined) {
+          if (state.active && m && currentMcpGen === state.mcpUpdates) {
+            env.setMcpState(m);
+          }
+        }).catch(function() {}).finally(function() {
+          state.inFlight.mcp = false;
+        });
+      }
+
+      if (!state.inFlight.subagents) {
+        state.inFlight.subagents = true;
+        const currentSubGen = state.subUpdates;
+        void bridge.subagents?.getSubagents?.().then(function(s = undefined) {
+          if (state.active && s && currentSubGen === state.subUpdates) {
+            env.setSubagents(s);
+          }
+        }).catch(function() {}).finally(function() {
+          state.inFlight.subagents = false;
+        });
+      }
     }, 2000);
 
     return () => {
