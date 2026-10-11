@@ -254,6 +254,7 @@ export class TranscriptIngestionService {
   private sessionGeneration = 0;
   private projectRoot = process.cwd();
   private lastObservedRunId: string | null = null;
+  private isDisposed = false;
   private allowedOutputRoots?: readonly string[] | undefined;
   private harnessService: HarnessService | null = null;
   private currentAttribution: WorktreeAttribution | null = null;
@@ -811,22 +812,25 @@ export class TranscriptIngestionService {
   }
 
   processFile(): void {
-    if (this.ingestionInFlight) {
+    if (this.isDisposed || this.ingestionInFlight) {
       return;
     }
     this.ingestionInFlight = true;
     try {
       this.ingestCurrentFile(this.sessionGeneration);
     } catch {
-      // Defensive error handling
+      // Defensive error handling: ignore transient read error
     } finally {
       this.ingestionInFlight = false;
     }
   }
 
   private ingestCurrentFile(generation: number): void {
+    if (this.isDisposed || this.sessionGeneration !== generation) {
+      return;
+    }
     const targetFile = this.customTranscriptPath || this.findActiveTranscriptPath();
-    if (this.sessionGeneration !== generation) {
+    if (this.isDisposed || this.sessionGeneration !== generation) {
       return;
     }
     if (!targetFile || !fs.existsSync(targetFile)) {
@@ -990,7 +994,7 @@ export class TranscriptIngestionService {
       }
     }
 
-    if (batchIds.length > 0) {
+    if (batchIds.length > 0 && step?.status !== "ERROR") {
       this.pendingSubagentsQueue.push(batchIds);
     }
   }
@@ -1103,6 +1107,8 @@ export class TranscriptIngestionService {
   }
 
   dispose(): void {
+    this.isDisposed = true;
+    this.sessionGeneration++;
     if (this.pollTimer) {
       clearInterval(this.pollTimer);
       this.pollTimer = null;

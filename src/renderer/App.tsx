@@ -172,7 +172,24 @@ export const App: React.FC = () => {
       console.error("[Cockpit] Failed to fetch harness events:", err);
     });
 
+    // 3. Fallback polling (every 2000ms) to ensure live sync resilience if IPC push is delayed or dropped
+    const fallbackPollTimer = setInterval(() => {
+      void api.telemetry.getSnapshot().then((t) => {
+        if (t) setTelemetry(t);
+      }).catch(() => {});
+      void api.loop.getSnapshot().then((l) => {
+        if (l) setLoopState(l);
+      }).catch(() => {});
+      void api.mcp.getSnapshot().then((m) => {
+        if (m) setMcpState(m);
+      }).catch(() => {});
+      void api.subagents?.getSubagents?.().then((s) => {
+        if (s) setSubagents(s);
+      }).catch(() => {});
+    }, 2000);
+
     return () => {
+      clearInterval(fallbackPollTimer);
       unsubLoop();
       unsubMcp();
       unsubLogs();

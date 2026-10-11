@@ -441,14 +441,22 @@ test("Stage 2 Compact Assertion: root input=0; nested input=99 -> input=0", () =
 
 // Stage 2 Compact Assertion: {"in":"dispose during pending read","out":"no subsequent service mutation"}
 test("Stage 2 Compact Assertion: dispose during pending read -> no subsequent service mutation", async () => {
-  const telemetry = new TelemetryService();
-  const mcp = new McpMonitorService();
-  const ingestion = new TranscriptIngestionService(telemetry, mcp);
+  const { dir: tempDir, cleanup } = createTempDir("dispose-read-test-");
+  try {
+    const dummyFile = path.join(tempDir, "empty-transcript.jsonl");
+    fs.writeFileSync(dummyFile, "", "utf-8");
 
-  ingestion.start();
-  ingestion.dispose();
+    const telemetry = new TelemetryService();
+    const mcp = new McpMonitorService();
+    const ingestion = new TranscriptIngestionService(telemetry, mcp, null, dummyFile);
 
-  // Polling timer should be cleared
-  assert.equal(mcp.getSnapshot().recentCalls.length, 0);
+    ingestion.start();
+    ingestion.dispose();
+
+    // Polling timer should be cleared
+    assert.equal(mcp.getSnapshot().recentCalls.length, 0);
+  } finally {
+    cleanup();
+  }
 });
 

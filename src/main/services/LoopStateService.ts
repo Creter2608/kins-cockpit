@@ -397,14 +397,7 @@ export class LoopStateService {
         testSummary: summary
       };
 
-      const dir = path.dirname(this.stateFilePath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-
-      const tempPath = `${this.stateFilePath}.tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      fs.writeFileSync(tempPath, JSON.stringify(updatedState, null, 2), "utf-8");
-      fs.renameSync(tempPath, this.stateFilePath);
+      this.store.writeSync(updatedState);
 
       this.readState();
       for (const listener of this.listeners) {
@@ -463,14 +456,7 @@ export class LoopStateService {
         architecturalCompliance: compliance
       };
 
-      const dir = path.dirname(this.stateFilePath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-
-      const tempPath = `${this.stateFilePath}.tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      fs.writeFileSync(tempPath, JSON.stringify(updatedState, null, 2), "utf-8");
-      fs.renameSync(tempPath, this.stateFilePath);
+      this.store.writeSync(updatedState);
 
       this.readState();
       for (const listener of this.listeners) {

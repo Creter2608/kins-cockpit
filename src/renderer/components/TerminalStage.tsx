@@ -10,7 +10,21 @@ export const TerminalStage: React.FC = () => {
   const fitAddonRef = useRef<FitAddon | null>(null);
   const bufferQueueRef = useRef<string[]>([]);
   const flushTimerRef = useRef<number | null>(null);
+  const flushTimeoutRef = useRef<number | null>(null);
   const [isRestarting, setIsRestarting] = useState(false);
+
+  const cancelScheduledFlush = () => {
+    if (flushTimerRef.current !== null) {
+      if (typeof cancelAnimationFrame === "function") {
+        cancelAnimationFrame(flushTimerRef.current);
+      }
+      flushTimerRef.current = null;
+    }
+    if (flushTimeoutRef.current !== null) {
+      clearTimeout(flushTimeoutRef.current);
+      flushTimeoutRef.current = null;
+    }
+  };
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -59,26 +73,28 @@ export const TerminalStage: React.FC = () => {
         api.terminal.write(data);
       });
 
-      // Connect PTY output to terminal with batched micro-rendering
+      // Connect PTY output to terminal with batched background-resilient paired race
       const unsubData = api.terminal.onData((data) => {
         bufferQueueRef.current.push(data);
-        if (flushTimerRef.current === null) {
+        if (flushTimerRef.current === null && flushTimeoutRef.current === null) {
           const flushCallback = () => {
-            flushTimerRef.current = null;
+            cancelScheduledFlush();
             if (terminalRef.current && bufferQueueRef.current.length > 0) {
               const batched = bufferQueueRef.current.join("");
               bufferQueueRef.current = [];
               terminalRef.current.write(batched);
             }
           };
-          flushTimerRef.current = typeof requestAnimationFrame === "function"
-            ? requestAnimationFrame(flushCallback)
-            : window.setTimeout(flushCallback, 16);
+          if (typeof requestAnimationFrame === "function") {
+            flushTimerRef.current = requestAnimationFrame(flushCallback);
+          }
+          flushTimeoutRef.current = window.setTimeout(flushCallback, 16);
         }
       });
 
       // Clear terminal screen on project switch or clear event
       const unsubClear = api.terminal.onClear?.(() => {
+        cancelScheduledFlush();
         bufferQueueRef.current = [];
         term.clear();
       });
@@ -149,6 +165,8 @@ export const TerminalStage: React.FC = () => {
   const handleRestart = async () => {
     if (isRestarting) return;
     setIsRestarting(true);
+    cancelScheduledFlush();
+    bufferQueueRef.current = [];
     try {
       if (window.cockpitApi) {
         await window.cockpitApi.terminal.restart();
@@ -166,6 +184,8 @@ export const TerminalStage: React.FC = () => {
   };
 
   const handleClear = () => {
+    cancelScheduledFlush();
+    bufferQueueRef.current = [];
     if (terminalRef.current) {
       terminalRef.current.clear();
     }
