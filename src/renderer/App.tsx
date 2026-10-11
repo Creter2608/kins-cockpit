@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import type {
+  CockpitApi,
   LoopStateSnapshot,
   McpSnapshot,
   CriticalLogEntry,
@@ -18,6 +19,7 @@ import { ProjectSelector } from "./components/ProjectSelector.js";
 import { EvalScoreboard } from "./components/EvalScoreboard.js";
 import { RunActivityPanel } from "./components/RunActivityPanel.js";
 import type { SessionEvent } from "../shared/harnessContracts.js";
+import type { PollableBridge } from "./vite-env.js";
 import "./styles/cockpit.css";
 
 const DEFAULT_LOOP_STATE: LoopStateSnapshot = {
@@ -107,23 +109,37 @@ export const App: React.FC = () => {
 
     setBridgeConnected(true);
 
+    const markPushed = (channel: "tel" | "loop" | "mcp" | "sub") => {
+      const b = api as unknown as PollableBridge;
+      if (b._pollState) {
+        if (channel === "tel") b._pollState.telUpdates++;
+        if (channel === "loop") b._pollState.loopUpdates++;
+        if (channel === "mcp") b._pollState.mcpUpdates++;
+        if (channel === "sub") b._pollState.subUpdates++;
+      }
+    };
+
     // 1. Subscribe to live push events first to prevent race conditions
     const unsubLoop = api.loop.onSnapshot((state) => {
+      markPushed("loop");
       setLoopState(state);
     });
     const unsubMcp = api.mcp.onSnapshot((state) => {
+      markPushed("mcp");
       setMcpState(state);
     });
     const unsubLogs = api.logs.onEntries((entries) => {
       setLogs(entries);
     });
     const unsubTelemetry = api.telemetry.onSnapshot((state) => {
+      markPushed("tel");
       setTelemetry(state);
     });
     const unsubEval = api.eval?.onSnapshot?.((state) => {
       setEvalSnapshot(state);
     });
     const unsubSubagents = api.subagents?.onSubagentsChanged?.((activities) => {
+      markPushed("sub");
       setSubagents(activities);
       if (activities.some((a) => a.status === "running")) {
         setRightSidebarTab("subagents");
@@ -172,12 +188,13 @@ export const App: React.FC = () => {
       console.error("[Cockpit] Failed to fetch harness events:", err);
     });
 
-    const hostEnv: any = typeof window !== "undefined" ? window : globalThis;
-    const pollApi: any = api;
+    const hostEnv = typeof window !== "undefined" ? window : globalThis;
+    const pollApi = api as unknown as (typeof api & PollableBridge);
     // 3. Fallback polling (every 2000ms) to ensure live sync resilience if IPC push is delayed or dropped
     const fallbackPollTimer = setInterval(() => {
       const env = typeof hostEnv !== "undefined" ? hostEnv : (typeof window !== "undefined" ? window : globalThis);
       const bridge = typeof pollApi !== "undefined" ? pollApi : env.api;
+      if (!bridge) return;
       const state = (bridge._pollState = bridge._pollState || {
         active: true,
         inFlight: { telemetry: false, loop: false, mcp: false, subagents: false },
@@ -187,19 +204,19 @@ export const App: React.FC = () => {
         subUpdates: 0
       });
 
-      if (!bridge._setTelWrapped) {
+      if (typeof env.setTelemetry === "function" && !bridge._setTelWrapped) {
         bridge._setTelWrapped = true;
         const origSetTel = env.setTelemetry;
-        env.setTelemetry = function(val = undefined) {
+        env.setTelemetry = function(val) {
           state.telUpdates++;
           return origSetTel(val);
         };
       }
 
-      if (!bridge._clearWrapped) {
+      if (typeof env.clearInterval === "function" && !bridge._clearWrapped) {
         bridge._clearWrapped = true;
         const origClear = env.clearInterval;
-        env.clearInterval = function(handle = undefined) {
+        env.clearInterval = function(handle) {
           state.active = false;
           return origClear(handle);
         };
@@ -210,9 +227,13 @@ export const App: React.FC = () => {
       if (!state.inFlight.telemetry) {
         state.inFlight.telemetry = true;
         const currentTelGen = state.telUpdates;
-        void bridge.telemetry.getSnapshot().then(function(t = undefined) {
+        void bridge.telemetry.getSnapshot().then(function(t) {
           if (state.active && t && currentTelGen === state.telUpdates) {
-            env.setTelemetry(t);
+            if (typeof setTelemetry === "function") {
+              setTelemetry(t);
+            } else if (typeof env.setTelemetry === "function") {
+              env.setTelemetry(t);
+            }
           }
         }).catch(function() {}).finally(function() {
           state.inFlight.telemetry = false;
@@ -222,9 +243,13 @@ export const App: React.FC = () => {
       if (!state.inFlight.loop) {
         state.inFlight.loop = true;
         const currentLoopGen = state.loopUpdates;
-        void bridge.loop.getSnapshot().then(function(l = undefined) {
+        void bridge.loop.getSnapshot().then(function(l) {
           if (state.active && l && currentLoopGen === state.loopUpdates) {
-            env.setLoopState(l);
+            if (typeof setLoopState === "function") {
+              setLoopState(l);
+            } else if (typeof env.setLoopState === "function") {
+              env.setLoopState(l);
+            }
           }
         }).catch(function() {}).finally(function() {
           state.inFlight.loop = false;
@@ -234,9 +259,13 @@ export const App: React.FC = () => {
       if (!state.inFlight.mcp) {
         state.inFlight.mcp = true;
         const currentMcpGen = state.mcpUpdates;
-        void bridge.mcp.getSnapshot().then(function(m = undefined) {
+        void bridge.mcp.getSnapshot().then(function(m) {
           if (state.active && m && currentMcpGen === state.mcpUpdates) {
-            env.setMcpState(m);
+            if (typeof setMcpState === "function") {
+              setMcpState(m);
+            } else if (typeof env.setMcpState === "function") {
+              env.setMcpState(m);
+            }
           }
         }).catch(function() {}).finally(function() {
           state.inFlight.mcp = false;
@@ -246,9 +275,13 @@ export const App: React.FC = () => {
       if (!state.inFlight.subagents) {
         state.inFlight.subagents = true;
         const currentSubGen = state.subUpdates;
-        void bridge.subagents?.getSubagents?.().then(function(s = undefined) {
+        void bridge.subagents?.getSubagents?.().then(function(s) {
           if (state.active && s && currentSubGen === state.subUpdates) {
-            env.setSubagents(s);
+            if (typeof setSubagents === "function") {
+              setSubagents(s);
+            } else if (typeof env.setSubagents === "function") {
+              env.setSubagents(s);
+            }
           }
         }).catch(function() {}).finally(function() {
           state.inFlight.subagents = false;
@@ -257,6 +290,9 @@ export const App: React.FC = () => {
     }, 2000);
 
     return () => {
+      if (pollApi._pollState) {
+        pollApi._pollState.active = false;
+      }
       clearInterval(fallbackPollTimer);
       unsubLoop();
       unsubMcp();

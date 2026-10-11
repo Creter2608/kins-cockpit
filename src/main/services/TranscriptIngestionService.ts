@@ -119,6 +119,16 @@ export function isPathInsideOrEqual(candidateSubPath: string, rootPath: string):
   }
 }
 
+export function isSubagentDirectoryName(dirName: string, knownSubagentIds?: ReadonlySet<string>): boolean {
+  if (knownSubagentIds && knownSubagentIds.has(dirName)) {
+    return true;
+  }
+  if (/(?:^|[_\-.])sub(?:agent)?(?:[_\-.]|$)/i.test(dirName)) {
+    return true;
+  }
+  return false;
+}
+
 export function isTranscriptBelongingToProject(transcriptPath: string, projectRoot: string): boolean {
   function lineMatchesProjectOwnership(line: string, projectRoot: string): boolean {
     if (!line.trim()) return false;
@@ -394,13 +404,6 @@ export class TranscriptIngestionService {
       return this.customTranscriptPath;
     }
 
-    // PINNED SESSION INVARIANT:
-    // Once currentTranscriptPath is pinned to an active project transcript,
-    // background subagent writes with newer mtime MUST NOT hijack the session!
-    if (this.currentTranscriptPath && fs.existsSync(this.currentTranscriptPath)) {
-      return this.currentTranscriptPath;
-    }
-
     const homeDir = process.env.USERPROFILE || process.env.HOME || "";
     const searchRoots = [
       path.join(homeDir, ".gemini", "antigravity-cli", "brain"),
@@ -417,7 +420,7 @@ export class TranscriptIngestionService {
         const convDirs = fs.readdirSync(root, { withFileTypes: true });
         for (const dir of convDirs) {
           if (!dir.isDirectory()) continue;
-          if (knownSubagentIds.has(dir.name)) continue;
+          if (isSubagentDirectoryName(dir.name, knownSubagentIds)) continue;
 
           const candidate = path.join(root, dir.name, ".system_generated", "logs", "transcript.jsonl");
           if (fs.existsSync(candidate)) {
@@ -439,6 +442,34 @@ export class TranscriptIngestionService {
       } catch {
         // Ignore unreadable dirs
       }
+    }
+
+    // Tie-break / recency preference: if current transcript remains eligible and ties for newest, retain it
+    if (
+      this.currentTranscriptPath &&
+      fs.existsSync(this.currentTranscriptPath) &&
+      !isSubagentDirectoryName(path.basename(path.dirname(path.dirname(path.dirname(this.currentTranscriptPath)))), knownSubagentIds) &&
+      isTranscriptBelongingToProject(this.currentTranscriptPath, this.projectRoot)
+    ) {
+      try {
+        const currentStat = fs.statSync(this.currentTranscriptPath);
+        if (currentStat.mtimeMs >= newestMtime) {
+          return this.currentTranscriptPath;
+        }
+      } catch {
+        // Fall back to newestPath
+      }
+    }
+
+    // If discovery yielded no candidate, retain existing current transcript only if still eligible
+    if (!newestPath && this.currentTranscriptPath && fs.existsSync(this.currentTranscriptPath)) {
+      if (
+        !isSubagentDirectoryName(path.basename(path.dirname(path.dirname(path.dirname(this.currentTranscriptPath)))), knownSubagentIds) &&
+        isTranscriptBelongingToProject(this.currentTranscriptPath, this.projectRoot)
+      ) {
+        return this.currentTranscriptPath;
+      }
+      return null;
     }
 
     return newestPath;
