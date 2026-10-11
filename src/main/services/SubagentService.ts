@@ -58,6 +58,23 @@ export class SubagentService {
     return this.aliases.get(id) ?? id;
   }
 
+  isSubagent(id: string): boolean {
+    const canonicalId = this.resolveCanonicalId(id);
+    return this.records.has(canonicalId);
+  }
+
+  getAllSubagentIds(): Set<string> {
+    const ids = new Set<string>();
+    for (const id of this.records.keys()) {
+      ids.add(id);
+    }
+    for (const [alias, canonical] of this.aliases.entries()) {
+      ids.add(alias);
+      ids.add(canonical);
+    }
+    return ids;
+  }
+
   recordInvocation(input: SubagentInvocationInput): SubagentActivity {
     const canonicalId = this.resolveCanonicalId(input.id);
     const existing = this.records.get(canonicalId);
@@ -68,20 +85,18 @@ export class SubagentService {
       if (existing.status === "completed" || existing.status === "error") {
         return this.toActivity(existing);
       }
-      // Update metadata if provided and was missing or default
+
       if (input.role && existing.role === "unknown") {
         existing.role = input.role.trim() || "unknown";
       }
       if (input.model && existing.model === "unknown") {
         existing.model = input.model.trim() || "unknown";
       }
-      if (input.prompt && !existing.fullPrompt) {
+      if (input.prompt) {
         existing.fullPrompt = input.prompt.trim();
-      }
-      if (input.prompt && !existing.promptSummary) {
         existing.promptSummary = normalizePromptSummary(input.prompt);
       }
-      if (input.eccMetadata && !existing.eccMetadata) {
+      if (input.eccMetadata) {
         existing.eccMetadata = snapshotEccMetadata(input.eccMetadata);
       }
       existing.updatedAt = currentTime;
@@ -148,21 +163,38 @@ export class SubagentService {
     }
   }
 
-  updateStatus(update: SubagentStatusUpdate): SubagentActivity | undefined {
+  resumeSubagent(id: string, timestamp?: number): SubagentActivity | undefined {
+    return this.updateStatus({ id, status: "running", timestamp, forceResume: true });
+  }
+
+  updateStatus(update: SubagentStatusUpdate & { forceResume?: boolean }): SubagentActivity | undefined {
     const canonicalId = this.resolveCanonicalId(update.id);
     const record = this.records.get(canonicalId);
     if (!record) {
       return undefined;
     }
 
-    // Terminal state protection: completed and error cannot regress
-    if (record.status === "completed" || record.status === "error") {
-      return this.toActivity(record);
-    }
-
     const timestamp = typeof update.timestamp === "number" && update.timestamp > 0
       ? update.timestamp
       : this.now();
+
+    if (record.status === update.status) {
+      return this.toActivity(record);
+    }
+
+    const wasTerminal = record.status === "completed" || record.status === "error";
+    if (wasTerminal) {
+      // Explicit resume evidence transitions stale terminal status back to running
+      if (update.forceResume && (update.status === "running" || update.status === "idle")) {
+        record.status = update.status;
+        record.completedAt = undefined;
+        record.errorMessage = undefined;
+        record.updatedAt = timestamp;
+        this.notify();
+        return this.toActivity(record);
+      }
+      return this.toActivity(record);
+    }
 
     record.status = update.status;
     record.updatedAt = timestamp;

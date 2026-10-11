@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { StringDecoder } from "node:string_decoder";
 import type { TelemetryService } from "./TelemetryService.js";
 import { calculateEstimatedCostUsd } from "./TelemetryService.js";
 import type { McpMonitorService } from "./McpMonitorService.js";
@@ -19,8 +20,11 @@ import {
   detectPhaseWithEvidenceFromTranscriptStep,
   detectPhaseFromTranscriptStep,
   parseGptTokenUsageLine,
+  extractSubagentInvocations,
   type PhaseDetectionResult,
-  type ParsedGptTokenUsage
+  type ParsedGptTokenUsage,
+  type ParsedSubagentInvocation,
+  type TranscriptEventOrigin
 } from "./transcriptParsers.js";
 
 export {
@@ -31,8 +35,11 @@ export {
   detectPhaseWithEvidenceFromTranscriptStep,
   detectPhaseFromTranscriptStep,
   parseGptTokenUsageLine,
+  extractSubagentInvocations,
   type PhaseDetectionResult,
-  type ParsedGptTokenUsage
+  type ParsedGptTokenUsage,
+  type ParsedSubagentInvocation,
+  type TranscriptEventOrigin
 };
 
 function extractConversationIds(text: string): string[] {
@@ -99,6 +106,120 @@ export function readAntigravityOutputTail(
   }
 }
 
+export function isPathInsideOrEqual(candidateSubPath: string, rootPath: string): boolean {
+  try {
+    const normSub = path.resolve(candidateSubPath);
+    const normRoot = path.resolve(rootPath);
+    const s1 = process.platform === "win32" ? normSub.toLowerCase() : normSub;
+    const r1 = process.platform === "win32" ? normRoot.toLowerCase() : normRoot;
+    const rel = path.relative(r1, s1);
+    return rel === "" || (rel !== ".." && !rel.startsWith(".." + path.sep) && !path.isAbsolute(rel));
+  } catch {
+    return false;
+  }
+}
+
+export function isTranscriptBelongingToProject(transcriptPath: string, projectRoot: string): boolean {
+  function lineMatchesProjectOwnership(line: string, projectRoot: string): boolean {
+    if (!line.trim()) return false;
+    try {
+      const step = JSON.parse(line);
+      if (Array.isArray(step.tool_calls)) {
+        for (const tc of step.tool_calls) {
+          if (tc && tc.args) {
+            const args = typeof tc.args === "object" ? tc.args : {};
+            const candidatePaths = [
+              args.Cwd,
+              args.SearchDirectory,
+              args.AbsolutePath,
+              args.TargetFile,
+              args.projectPath,
+              args.projectRoot,
+              args.workspace
+            ].filter((p): p is string => typeof p === "string" && p.trim().length > 0);
+
+            for (const p of candidatePaths) {
+              const cleanP = p.replace(/^"|"$/g, "");
+              if (isPathInsideOrEqual(cleanP, projectRoot)) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+
+      const textToCheck =
+        (typeof step.content === "string" ? step.content : "") +
+        "\n" +
+        (typeof step.thinking === "string" ? step.thinking : "");
+      if (textToCheck) {
+        const wsMatches = textToCheck.matchAll(
+          /(?:Active Workspaces|Command Working Directory|SearchDirectory|Cwd)[:\s-]+([^\r\n"']+)/gi
+        );
+        for (const m of wsMatches) {
+          const rawWs = m[1]?.trim();
+          if (rawWs && isPathInsideOrEqual(rawWs, projectRoot)) {
+            return true;
+          }
+        }
+      }
+    } catch {
+      // Continue inspecting next line
+    }
+    return false;
+  }
+  if (!fs.existsSync(transcriptPath)) return false;
+  let fd: number | null = null;
+  try {
+    const stat = fs.statSync(transcriptPath);
+    if (!stat.isFile() || stat.size === 0) return false;
+
+    fd = fs.openSync(transcriptPath, "r");
+    const maxScanBytes = Math.min(stat.size, 256 * 1024);
+    const chunkSize = 64 * 1024;
+    let offset = 0;
+    const decoder = new StringDecoder("utf-8");
+    let leftover = "";
+
+    while (offset < maxScanBytes) {
+      const bytesToRead = Math.min(chunkSize, maxScanBytes - offset);
+      const buffer = Buffer.alloc(bytesToRead);
+      const bytesRead = fs.readSync(fd, buffer, 0, bytesToRead, offset);
+      if (bytesRead <= 0) break;
+      offset += bytesRead;
+
+      const chunkStr = decoder.write(buffer.subarray(0, bytesRead));
+      const text = leftover + chunkStr;
+      const lines = text.split(/\r?\n/);
+      leftover = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (lineMatchesProjectOwnership(line, projectRoot)) {
+          return true;
+        }
+      }
+    }
+
+    // Inspect remaining record at confirmed physical EOF within ceiling
+    if (offset >= stat.size && leftover.trim()) {
+      if (lineMatchesProjectOwnership(leftover, projectRoot)) {
+        return true;
+      }
+    }
+  } catch {
+    return false;
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        // Ignore close error
+      }
+    }
+  }
+  return false;
+}
+
 export class TranscriptIngestionService {
   private telemetryService: TelemetryService;
   private mcpService: McpMonitorService;
@@ -108,7 +229,11 @@ export class TranscriptIngestionService {
   private currentTranscriptPath: string | null = null;
   private lastOffset: number = 0;
   private incompleteLine: string = "";
+  private discardUntilNewline: boolean = false;
+  private stringDecoder = new StringDecoder("utf-8");
   private pollTimer: NodeJS.Timeout | null = null;
+  private ingestionInFlight: boolean = false;
+  private readonly MAX_INGESTION_CHUNK_BYTES = 64 * 1024; // 64 KiB
 
   // Queue of pending synthetic subagent ID batches awaiting tool result conversationIds
   private pendingSubagentsQueue: string[][] = [];
@@ -206,6 +331,7 @@ export class TranscriptIngestionService {
     this.resetSessionCounters();
     this.lastOffset = 0;
     this.incompleteLine = "";
+    this.discardUntilNewline = false;
     this.currentTranscriptPath = null;
     if (this.harnessService) {
       const projId = path.basename(this.projectRoot).replace(/[^a-zA-Z0-9_-]/g, "_") || "default";
@@ -218,6 +344,8 @@ export class TranscriptIngestionService {
     this.resetSessionCounters();
     this.lastOffset = 0;
     this.incompleteLine = "";
+    this.discardUntilNewline = false;
+    this.stringDecoder = new StringDecoder("utf-8");
     this.currentTranscriptPath = null;
   }
 
@@ -265,6 +393,13 @@ export class TranscriptIngestionService {
       return this.customTranscriptPath;
     }
 
+    // PINNED SESSION INVARIANT:
+    // Once currentTranscriptPath is pinned to an active project transcript,
+    // background subagent writes with newer mtime MUST NOT hijack the session!
+    if (this.currentTranscriptPath && fs.existsSync(this.currentTranscriptPath)) {
+      return this.currentTranscriptPath;
+    }
+
     const homeDir = process.env.USERPROFILE || process.env.HOME || "";
     const searchRoots = [
       path.join(homeDir, ".gemini", "antigravity-cli", "brain"),
@@ -273,6 +408,7 @@ export class TranscriptIngestionService {
 
     let newestPath: string | null = null;
     let newestMtime = 0;
+    const knownSubagentIds = this.subagentService?.getAllSubagentIds() ?? new Set<string>();
 
     for (const root of searchRoots) {
       if (!fs.existsSync(root)) continue;
@@ -280,10 +416,20 @@ export class TranscriptIngestionService {
         const convDirs = fs.readdirSync(root, { withFileTypes: true });
         for (const dir of convDirs) {
           if (!dir.isDirectory()) continue;
+          if (knownSubagentIds.has(dir.name)) continue;
+
           const candidate = path.join(root, dir.name, ".system_generated", "logs", "transcript.jsonl");
           if (fs.existsSync(candidate)) {
+            const belongs = isTranscriptBelongingToProject(candidate, this.projectRoot);
+            if (!belongs) {
+              continue;
+            }
+
             const stat = fs.statSync(candidate);
-            if (stat.mtimeMs > newestMtime) {
+            if (
+              stat.mtimeMs > newestMtime ||
+              (stat.mtimeMs === newestMtime && (!newestPath || candidate < newestPath))
+            ) {
               newestMtime = stat.mtimeMs;
               newestPath = candidate;
             }
@@ -336,23 +482,10 @@ export class TranscriptIngestionService {
 
     const stepIdx = typeof step.step_index === "number" ? step.step_index : Date.now();
 
-    // Cumulative context tracking and auto-reset on new user turn
+    // Cumulative context tracking on user turn (observational only; must not reset loop)
     if (step.source === "USER_EXPLICIT" || step.source === "USER" || step.type === "USER_INPUT") {
       const userContent = typeof step.content === "string" ? step.content : "";
       this.cumulativeContextLength += userContent.length;
-
-      if (this.loopService) {
-        const current = this.loopService.getSnapshot();
-        const currentIdx = LOOP_PHASES.indexOf(current.currentPhase as LoopPhase);
-        const isExplicitNewLoop =
-          /\b(loop\s*m[oóớơ>a-z]*|new\s*loop|start\s*loop|chạy\s*loop|bắt\s*đầu\s*loop|reset\s*loop)\b/i.test(userContent) ||
-          (/\bloop\b/i.test(userContent) && /\b(m[oóớơ>a-z]*|new|start|chạy|bắt\s*đầu|reset)\b/i.test(userContent));
-        // Automatically reset loop if user submits a new prompt after previous run reached VERIFY or later,
-        // or if status succeeded, or if user explicitly requested a new loop
-        if (isExplicitNewLoop || (stepIdx > 0 && (currentIdx >= 6 || current.status === "succeeded"))) {
-          this.loopService.resetLoop();
-        }
-      }
     }
 
     // 1. Process Tool Calls (Layer 1 Assertion 5: dedupe step.tool_calls)
@@ -397,6 +530,16 @@ export class TranscriptIngestionService {
           }
         }
 
+        let rawTimestamp: number | undefined;
+        if (typeof step.created_at === "string") {
+          const parsedMs = new Date(step.created_at).getTime();
+          if (Number.isFinite(parsedMs) && parsedMs >= 0) {
+            rawTimestamp = parsedMs;
+          }
+        } else if (typeof step.created_at === "number" && Number.isFinite(step.created_at) && step.created_at >= 0) {
+          rawTimestamp = step.created_at;
+        }
+
         const callKey = stepIdx + ":" + i + ":" + serverName + ":" + toolName;
         if (!this.seenToolCallKeys.has(callKey)) {
           this.seenToolCallKeys.add(callKey);
@@ -404,7 +547,8 @@ export class TranscriptIngestionService {
             serverName,
             toolName,
             status: step.status === "ERROR" ? "error" : "success",
-            args
+            args,
+            ...(rawTimestamp !== undefined ? { timestamp: rawTimestamp } : {})
           });
 
           if (this.harnessService) {
@@ -453,13 +597,13 @@ export class TranscriptIngestionService {
             status: "error",
             errorMessage: typeof step.content === "string" ? step.content : "Tool execution error"
           });
-        } else {
+        } else if (step.status === "DONE" || step.type === "SUBAGENT_COMPLETED") {
           this.subagentService.updateStatus({
             id: resultId,
             status: "completed"
           });
         }
-      } else if (step.sender && typeof step.sender === "string" && (step.status === "DONE" || step.type === "SUBAGENT_COMPLETED")) {
+      } else if (step.sender && typeof step.sender === "string" && step.type === "SUBAGENT_COMPLETED") {
         this.subagentService.updateStatus({
           id: step.sender,
           status: "completed"
@@ -467,7 +611,7 @@ export class TranscriptIngestionService {
       }
 
       if (typeof step.content === "string") {
-        this.handleSubagentOutput(step.content);
+        this.handleSubagentOutput(step.content, step);
       }
     }
 
@@ -546,29 +690,49 @@ export class TranscriptIngestionService {
       }
     }
 
-    // 3. Process Gemini Telemetry
-    if (step.source === "MODEL" && typeof step.step_index === "number") {
+    // 3. Process Gemini Telemetry (Subagent events must not increment main agent telemetry)
+    const isSubagentStep =
+      step.is_subagent === true ||
+      step.isSubagent === true ||
+      step.subagent === true ||
+      step.source === "SUBAGENT" ||
+      (step.conversationId && this.subagentService?.isSubagent(String(step.conversationId))) ||
+      (step.conversation_id && this.subagentService?.isSubagent(String(step.conversation_id))) ||
+      (step.sender && this.subagentService?.isSubagent(String(step.sender)) && (step.source === "SYSTEM" || step.type === "SYSTEM_MESSAGE"));
+
+    if (!isSubagentStep && step.source === "MODEL" && typeof step.step_index === "number") {
       if (!this.seenGeminiStepIndices.has(step.step_index)) {
         this.seenGeminiStepIndices.add(step.step_index);
 
-        let estPrompt: number;
-        let estComp: number;
+        const isValidTokenNumber = (v: unknown): v is number =>
+          typeof v === "number" && Number.isFinite(v) && v >= 0;
 
-        if (step.usage && typeof step.usage.prompt_tokens === "number") {
-          estPrompt = step.usage.prompt_tokens;
-          estComp = typeof step.usage.completion_tokens === "number"
-            ? step.usage.completion_tokens
-            : Math.max(1, Math.ceil((content.length + thinking.length) / 4));
-        } else if (step.usage && typeof step.usage.input_tokens === "number") {
-          estPrompt = step.usage.input_tokens;
-          estComp = typeof step.usage.output_tokens === "number"
+        const rootInput = isValidTokenNumber(step.input_tokens) ? step.input_tokens : undefined;
+        const rootOutput = isValidTokenNumber(step.output_tokens) ? step.output_tokens : undefined;
+
+        const usageInput = step.usage && isValidTokenNumber(step.usage.prompt_tokens)
+          ? step.usage.prompt_tokens
+          : step.usage && isValidTokenNumber(step.usage.input_tokens)
+            ? step.usage.input_tokens
+            : undefined;
+
+        const usageOutput = step.usage && isValidTokenNumber(step.usage.completion_tokens)
+          ? step.usage.completion_tokens
+          : step.usage && isValidTokenNumber(step.usage.output_tokens)
             ? step.usage.output_tokens
+            : undefined;
+
+        const estPrompt = rootInput !== undefined
+          ? rootInput
+          : usageInput !== undefined
+            ? usageInput
+            : Math.max(1000, Math.ceil(this.cumulativeContextLength / 4));
+
+        const estComp = rootOutput !== undefined
+          ? rootOutput
+          : usageOutput !== undefined
+            ? usageOutput
             : Math.max(1, Math.ceil((content.length + thinking.length) / 4));
-        } else {
-          // Current active context window estimate (snapshot, never accumulated per step)
-          estPrompt = Math.max(1000, Math.ceil(this.cumulativeContextLength / 4));
-          estComp = Math.max(1, Math.ceil((content.length + thinking.length) / 4));
-        }
 
         this.cumulativeContextLength += content.length + thinking.length;
         // Invariant: Gemini prompt tokens represent the current active context window,
@@ -647,7 +811,24 @@ export class TranscriptIngestionService {
   }
 
   processFile(): void {
+    if (this.ingestionInFlight) {
+      return;
+    }
+    this.ingestionInFlight = true;
+    try {
+      this.ingestCurrentFile(this.sessionGeneration);
+    } catch {
+      // Defensive error handling
+    } finally {
+      this.ingestionInFlight = false;
+    }
+  }
+
+  private ingestCurrentFile(generation: number): void {
     const targetFile = this.customTranscriptPath || this.findActiveTranscriptPath();
+    if (this.sessionGeneration !== generation) {
+      return;
+    }
     if (!targetFile || !fs.existsSync(targetFile)) {
       return;
     }
@@ -657,6 +838,8 @@ export class TranscriptIngestionService {
       this.currentTranscriptPath = targetFile;
       this.lastOffset = 0;
       this.incompleteLine = "";
+      this.discardUntilNewline = false;
+      this.stringDecoder = new StringDecoder("utf-8");
 
       if (isSwitchingSession) {
         this.resetSessionCounters();
@@ -669,117 +852,146 @@ export class TranscriptIngestionService {
 
     try {
       const stat = fs.statSync(targetFile);
+      if (this.sessionGeneration !== generation) return;
+
       if (stat.size < this.lastOffset) {
         this.lastOffset = 0;
         this.incompleteLine = "";
+        this.discardUntilNewline = false;
+        this.stringDecoder = new StringDecoder("utf-8");
       }
 
       if (stat.size === this.lastOffset) {
         return;
       }
 
-      const bytesToRead = stat.size - this.lastOffset;
-      const buffer = Buffer.alloc(bytesToRead);
-      const fd = fs.openSync(targetFile, "r");
+      let fd: number | null = null;
       try {
-        fs.readSync(fd, buffer, 0, bytesToRead, this.lastOffset);
+        fd = fs.openSync(targetFile, "r");
+        while (this.lastOffset < stat.size) {
+          if (this.sessionGeneration !== generation) break;
+
+          const bytesToRead = Math.min(stat.size - this.lastOffset, this.MAX_INGESTION_CHUNK_BYTES);
+          if (bytesToRead <= 0) break;
+
+          const buffer = Buffer.alloc(bytesToRead);
+          const bytesRead = fs.readSync(fd, buffer, 0, bytesToRead, this.lastOffset);
+          if (bytesRead <= 0) break;
+
+          this.lastOffset += bytesRead;
+
+          let chunkStr = this.stringDecoder.write(buffer.subarray(0, bytesRead));
+          if (this.discardUntilNewline) {
+            const newlineIdx = chunkStr.indexOf("\n");
+            if (newlineIdx !== -1) {
+              chunkStr = chunkStr.slice(newlineIdx + 1);
+              this.discardUntilNewline = false;
+            } else {
+              continue;
+            }
+          }
+
+          const raw = this.incompleteLine + chunkStr;
+          const lines = raw.split(/\r?\n/);
+          this.incompleteLine = lines.pop() ?? "";
+
+          for (const line of lines) {
+            if (this.sessionGeneration !== generation) return;
+            const fullLine = this.resolveFullLineIfTruncated(line, targetFile);
+            this.processLine(fullLine, generation);
+          }
+
+        }
       } finally {
-        fs.closeSync(fd);
-      }
-
-      this.lastOffset = stat.size;
-
-      const raw = this.incompleteLine + buffer.toString("utf-8");
-      const lines = raw.split(/\r?\n/);
-      this.incompleteLine = lines.pop() ?? "";
-
-      const currentGen = this.sessionGeneration;
-      for (const line of lines) {
-        if (this.sessionGeneration !== currentGen) return;
-        this.processLine(line, currentGen);
+        if (fd !== null) {
+          try {
+            fs.closeSync(fd);
+          } catch {
+            // Ignore close error
+          }
+        }
       }
     } catch {
       // Defensive handling
     }
   }
 
+  private resolveFullLineIfTruncated(line: string, targetFile: string): string {
+    if (!line.includes('"truncated_fields"')) {
+      return line;
+    }
+    try {
+      const parsed = JSON.parse(line);
+      if (!Array.isArray(parsed.truncated_fields) || !parsed.truncated_fields.includes("tool_calls")) {
+        return line;
+      }
+      const fullTranscriptPath = path.join(path.dirname(targetFile), "transcript_full.jsonl");
+      if (!fs.existsSync(fullTranscriptPath)) {
+        return line;
+      }
+      const targetStepIndex = parsed.step_index;
+      if (typeof targetStepIndex !== "number") {
+        return line;
+      }
+      const fullContent = fs.readFileSync(fullTranscriptPath, "utf-8");
+      const fullLines = fullContent.split(/\r?\n/);
+      if (fullLines[targetStepIndex]) {
+        try {
+          const cand = JSON.parse(fullLines[targetStepIndex]);
+          if (cand.step_index === targetStepIndex) {
+            return fullLines[targetStepIndex];
+          }
+        } catch {
+          // Continue searching
+        }
+      }
+      for (const fLine of fullLines) {
+        if (!fLine.trim()) continue;
+        if (fLine.includes(`"step_index":${targetStepIndex}`) || fLine.includes(`"step_index": ${targetStepIndex}`)) {
+          return fLine;
+        }
+      }
+    } catch {
+      // Ignore error and fall back to original line
+    }
+    return line;
+  }
+
   private handleSubagentToolCall(step: any, tc: any, stepIdx: number, toolIdx: number): void {
     if (!this.subagentService) return;
-    let args = tc.args || {};
-    if (typeof args === "string") {
-      try {
-        args = JSON.parse(args);
-      } catch {
-        args = {};
-      }
+
+    const invocations = extractSubagentInvocations(tc);
+    if (invocations.length === 0) {
+      return;
     }
 
-    let rawList = args.Subagents || args.subagents;
-    if (typeof rawList === "string") {
-      try {
-        const parsed = JSON.parse(rawList);
-        if (Array.isArray(parsed)) {
-          rawList = parsed;
-        }
-      } catch {
-        // preserve safe fallback
-      }
-    }
-
-    if (Array.isArray(rawList) && rawList.length > 0) {
-      const batchIds: string[] = [];
-      for (let sIdx = 0; sIdx < rawList.length; sIdx++) {
-        const item = rawList[sIdx];
-        if (!item || typeof item !== "object") continue;
-        const subId = item.id || item.conversationId || `${stepIdx}:sub:${toolIdx}:${sIdx}`;
-        const role = item.Role || item.role || item.TypeName || item.type_name || item.typeName;
-        const model = item.Model || item.model;
-        const prompt = item.Prompt || item.prompt || item.task || item.instruction;
-
-        this.subagentService.recordInvocation({
-          id: String(subId),
-          role: role ? String(role) : undefined,
-          model: model ? String(model) : undefined,
-          prompt: prompt ? String(prompt) : undefined,
-          startedAt: typeof step.created_at === "string" ? new Date(step.created_at).getTime() : undefined
-        });
-
-        batchIds.push(String(subId));
-
-        if (step.status === "ERROR") {
-          this.subagentService.updateStatus({
-            id: String(subId),
-            status: "error",
-            errorMessage: typeof step.content === "string" ? step.content : "Subagent error"
-          });
-        }
-      }
-      if (batchIds.length > 0) {
-        this.pendingSubagentsQueue.push(batchIds);
-      }
-    } else {
-      const subId = args.id || args.conversationId || `${stepIdx}:sub:${toolIdx}:0`;
-      const role = args.Role || args.role || args.TypeName || args.type_name;
-      const model = args.Model || args.model;
-      const prompt = args.Prompt || args.prompt || args.task || args.instruction;
+    const batchIds: string[] = [];
+    for (let sIdx = 0; sIdx < invocations.length; sIdx++) {
+      const item = invocations[sIdx];
+      if (!item) continue;
+      const subId = item.id || `${stepIdx}:sub:${toolIdx}:${sIdx}`;
 
       this.subagentService.recordInvocation({
         id: String(subId),
-        role: role ? String(role) : undefined,
-        model: model ? String(model) : undefined,
-        prompt: prompt ? String(prompt) : undefined,
-        startedAt: typeof step.created_at === "string" ? new Date(step.created_at).getTime() : undefined
+        role: item.role,
+        model: item.model,
+        prompt: item.prompt,
+        startedAt: typeof step?.created_at === "string" ? new Date(step.created_at).getTime() : undefined
       });
 
-      this.pendingSubagentsQueue.push([String(subId)]);
+      batchIds.push(String(subId));
 
-      if (step.status === "ERROR") {
+      if (step?.status === "ERROR") {
         this.subagentService.updateStatus({
           id: String(subId),
           status: "error",
           errorMessage: typeof step.content === "string" ? step.content : "Subagent error"
         });
       }
+    }
+
+    if (batchIds.length > 0) {
+      this.pendingSubagentsQueue.push(batchIds);
     }
   }
 
@@ -810,7 +1022,7 @@ export class TranscriptIngestionService {
     }
   }
 
-  private handleSubagentOutput(content: string): void {
+  private handleSubagentOutput(content: string, step?: unknown): void {
     if (!this.subagentService) return;
 
     if (content.includes("conversationId")) {
@@ -830,9 +1042,45 @@ export class TranscriptIngestionService {
       }
     }
 
-    const sender = extractSystemMessageSender(content);
-    if (sender) {
-      this.subagentService.markCompletedByConversationId(sender);
+    const stepObj = step && typeof step === "object" ? (step as Record<string, unknown>) : undefined;
+    const explicitSender =
+      typeof stepObj?.sender === "string" && stepObj.sender.trim()
+        ? stepObj.sender.trim()
+        : undefined;
+    const sender = explicitSender || extractSystemMessageSender(content);
+
+    if (sender && this.subagentService.isSubagent(sender)) {
+      const taskIdMatch = /Task\s+id\s+"([^"]+)"/i.exec(content);
+      const taskId = taskIdMatch ? taskIdMatch[1] : undefined;
+
+      // If a task ID is explicitly specified, ensure it belongs to the sender or a known subagent
+      const taskMatchesSender = !taskId || taskId === sender || this.subagentService.isSubagent(taskId);
+
+      if (taskMatchesSender) {
+        const isExplicitDone =
+          /\bTask\s+id\s+"[^"]+"\s+(?:finished with result|was completed with result)\b/i.test(content) ||
+          /\b(?:finished with result|was completed with result)\s*:/i.test(content) ||
+          /\bcontent=Done\b/i.test(content) ||
+          /\bcontent=Done\s+/i.test(content) ||
+          stepObj?.type === "SUBAGENT_COMPLETED";
+
+        const isExplicitError =
+          /\bTask\s+id\s+"[^"]+"\s+(?:failed with error|terminated with error|was canceled with result)\b/i.test(content) ||
+          /\b(?:failed with error|terminated with error)\s*:/i.test(content) ||
+          /\berrored out\b/i.test(content);
+
+        const targetSubagentId = (taskId && this.subagentService.isSubagent(taskId)) ? taskId : sender;
+
+        if (isExplicitDone) {
+          this.subagentService.markCompletedByConversationId(targetSubagentId);
+        } else if (isExplicitError) {
+          this.subagentService.updateStatus({
+            id: targetSubagentId,
+            status: "error",
+            errorMessage: content
+          });
+        }
+      }
     }
 
     if (content.includes("Successfully killed")) {

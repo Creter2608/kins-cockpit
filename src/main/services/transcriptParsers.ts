@@ -110,6 +110,13 @@ export function detectPhaseWithEvidenceFromTranscriptStep(step: unknown): PhaseD
       const name = String(call.name || "").toLowerCase().trim();
       const args = call.args && typeof call.args === "object" ? (call.args as Record<string, unknown>) : {};
 
+      if (name === "invoke_subagent" || name.endsWith(".invoke_subagent") ||
+          name === "manage_subagents" || name.endsWith(".manage_subagents") ||
+          name === "send_message" || name.endsWith(".send_message")) {
+        // Subagent background orchestration is NOT phase evidence for the main agent loop!
+        continue;
+      }
+
       if (name === "ask_question") {
         candidates.push({ phase: "SPEC_GATE", evidence: "tool: ask_question" });
       }
@@ -157,6 +164,20 @@ export function detectPhaseWithEvidenceFromTranscriptStep(step: unknown): PhaseD
   }
 
   // 2. Check Textual / Template Signals in content or thinking
+  // Subagent events, system messages, or notification envelopes must NEVER drive main loop phase transitions
+  const isSystemOrSubagentMsg =
+    s.type === "SYSTEM_MESSAGE" ||
+    s.source === "SYSTEM" ||
+    s.source === "SUBAGENT" ||
+    s.is_subagent === true ||
+    s.isSubagent === true ||
+    s.subagent === true ||
+    (typeof s.content === "string" && s.content.includes("<SYSTEM_MESSAGE>") && s.content.includes("sender="));
+
+  if (isSystemOrSubagentMsg) {
+    return null;
+  }
+
   const content = typeof s.content === "string" ? s.content : "";
   const thinking = typeof s.thinking === "string" ? s.thinking : "";
   const combined = content + "\n" + thinking;
@@ -284,3 +305,226 @@ export function parseGptTokenUsageLine(text: string): ParsedGptTokenUsage | null
     totalTokens: totalTokens > 0 ? totalTokens : inputTokens + outputTokens
   };
 }
+
+export type TranscriptEventOrigin = "main" | "subagent" | "unknown";
+
+export interface ParsedSubagentInvocation {
+  readonly id?: string | undefined;
+  readonly role: string;
+  readonly model: string;
+  readonly prompt: string;
+}
+
+function parseSingleSubagentChunk(chunk: string): ParsedSubagentInvocation | null {
+  // First attempt clean JSON parse by repairing trailing characters if needed
+  let cleaned = chunk.trim();
+  if (!cleaned.endsWith("}")) {
+    const quoteMatches = cleaned.match(/(?<!\\)"/g);
+    const quoteCount = quoteMatches ? quoteMatches.length : 0;
+    if (quoteCount % 2 !== 0) {
+      cleaned += '"';
+    }
+    cleaned += "}";
+  }
+
+  try {
+    const obj = JSON.parse(cleaned);
+    if (obj && typeof obj === "object") {
+      const id = obj.id ?? obj.conversationId;
+      const role = obj.Role ?? obj.role ?? obj.TypeName ?? obj.type_name ?? obj.typeName ?? obj.name;
+      const model = obj.Model ?? obj.model;
+      const prompt = obj.Prompt ?? obj.prompt ?? obj.task ?? obj.instruction ?? obj.initialPrompt;
+      const roleStr = role !== undefined && role !== null ? String(role).trim() : "";
+      const promptStr = prompt !== undefined && prompt !== null ? String(prompt).trim() : "";
+      const modelStr = model !== undefined && model !== null ? String(model).trim() : "inherit";
+      if (roleStr || promptStr) {
+        return {
+          ...(id ? { id: String(id) } : {}),
+          role: roleStr || "subagent",
+          model: modelStr || "inherit",
+          prompt: promptStr
+        };
+      }
+    }
+  } catch {
+    // Fall back to regex field extraction confined strictly to this single chunk
+  }
+
+  const roleMatch = /"(?:Role|role|TypeName|type_name|typeName|name)"\s*:\s*"([^"\r\n]+)/i.exec(chunk);
+  const modelMatch = /"(?:Model|model)"\s*:\s*"([^"\r\n]+)/i.exec(chunk);
+  const promptMatch = /"(?:Prompt|prompt|task|instruction|initialPrompt)"\s*:\s*"((?:[^"\\]|\\.)*)/i.exec(chunk);
+
+  const roleStr = roleMatch ? roleMatch[1]?.replace(/[\\"]+$/, "").trim() : "";
+  const modelStr = modelMatch ? modelMatch[1]?.replace(/[\\"]+$/, "").trim() : "inherit";
+  let promptStr = promptMatch ? promptMatch[1]?.replace(/[\\"]+$/, "") : "";
+  if (promptStr) {
+    try {
+      promptStr = JSON.parse(`"${promptStr}"`);
+    } catch {
+      // Keep unescaped if parse fails
+    }
+  }
+
+  if (roleStr || promptStr) {
+    return {
+      role: roleStr || "subagent",
+      model: modelStr || "inherit",
+      prompt: promptStr ? String(promptStr).trim() : ""
+    };
+  }
+
+  return null;
+}
+
+function parseTruncatedSubagentsString(raw: string): ParsedSubagentInvocation[] {
+  const results: ParsedSubagentInvocation[] = [];
+  const arrayStart = raw.search(/["']?subagents["']?\s*:\s*\[/i);
+  const searchSlice = arrayStart !== -1 ? raw.slice(arrayStart) : raw;
+
+  // Split into independent object candidate blocks by scanning balanced braces
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let memberStart = -1;
+
+  for (let i = 0; i < searchSlice.length; i++) {
+    const ch = searchSlice[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escape = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (!inString) {
+      if (ch === "{") {
+        if (depth === 0) {
+          memberStart = i;
+        }
+        depth++;
+      } else if (ch === "}") {
+        depth--;
+        if (depth === 0 && memberStart !== -1) {
+          const chunk = searchSlice.slice(memberStart, i + 1);
+          const parsed = parseSingleSubagentChunk(chunk);
+          if (parsed) {
+            results.push(parsed);
+          }
+          memberStart = -1;
+        }
+      }
+    }
+  }
+
+  // If the last member was truncated before closing brace (depth > 0)
+  if (depth > 0 && memberStart !== -1) {
+    const chunk = searchSlice.slice(memberStart);
+    const parsed = parseSingleSubagentChunk(chunk);
+    if (parsed) {
+      results.push(parsed);
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Extracts normalized subagent invocations from an invoke_subagent tool call or arguments.
+ * Handles structured objects, JSON-encoded argument strings, and truncated JSON arrays.
+ * Preserves member order and newlines without cross-member field pairing.
+ */
+export function extractSubagentInvocations(
+  toolCall: unknown
+): readonly ParsedSubagentInvocation[] {
+  if (!toolCall || typeof toolCall !== "object") {
+    return [];
+  }
+
+  const tc = toolCall as Record<string, unknown>;
+  let args = tc.args !== undefined ? tc.args : tc;
+
+  if (typeof args === "string") {
+    try {
+      args = JSON.parse(args) as Record<string, unknown>;
+    } catch {
+      // Handled via truncated array parser below
+    }
+  }
+
+  // 1. Structured args parsing
+  if (args && typeof args === "object") {
+    const rawArgs = args as Record<string, unknown>;
+    let subagents = rawArgs.Subagents ?? rawArgs.subagents;
+
+    if (typeof subagents === "string") {
+      try {
+        subagents = JSON.parse(subagents);
+      } catch {
+        // Handled via string parser below
+      }
+    }
+
+    if (Array.isArray(subagents)) {
+      const results: ParsedSubagentInvocation[] = [];
+      for (const item of subagents) {
+        if (!item || typeof item !== "object") continue;
+        const rec = item as Record<string, unknown>;
+        const id = rec.id ?? rec.conversationId;
+        const role = rec.Role ?? rec.role ?? rec.TypeName ?? rec.type_name ?? rec.typeName ?? rec.name;
+        const model = rec.Model ?? rec.model;
+        const prompt = rec.Prompt ?? rec.prompt ?? rec.task ?? rec.instruction ?? rec.initialPrompt;
+
+        const roleStr = role !== undefined && role !== null ? String(role).trim() : "";
+        const promptStr = prompt !== undefined && prompt !== null ? String(prompt).trim() : "";
+        const modelStr = model !== undefined && model !== null ? String(model).trim() : "inherit";
+
+        if (roleStr || promptStr) {
+          results.push({
+            ...(id ? { id: String(id) } : {}),
+            role: roleStr || "subagent",
+            model: modelStr || "inherit",
+            prompt: promptStr
+          });
+        }
+      }
+      if (results.length > 0) {
+        return Object.freeze(results);
+      }
+    }
+
+    // Single subagent direct args format
+    const role = rawArgs.Role ?? rawArgs.role ?? rawArgs.TypeName ?? rawArgs.type_name ?? rawArgs.typeName ?? rawArgs.name;
+    const model = rawArgs.Model ?? rawArgs.model;
+    const prompt = rawArgs.Prompt ?? rawArgs.prompt ?? rawArgs.task ?? rawArgs.instruction ?? rawArgs.initialPrompt;
+    if (role !== undefined || prompt !== undefined) {
+      const roleStr = role !== undefined && role !== null ? String(role).trim() : "";
+      const promptStr = prompt !== undefined && prompt !== null ? String(prompt).trim() : "";
+      const modelStr = model !== undefined && model !== null ? String(model).trim() : "inherit";
+      if (roleStr || promptStr) {
+        const id = rawArgs.id ?? rawArgs.conversationId;
+        return Object.freeze([
+          {
+            ...(id ? { id: String(id) } : {}),
+            role: roleStr || "subagent",
+            model: modelStr || "inherit",
+            prompt: promptStr
+          }
+        ]);
+      }
+    }
+  }
+
+  // 2. Fallback parser for truncated or string-encoded JSON array
+  const rawString = typeof args === "string" ? args : typeof tc.args === "string" ? tc.args : "";
+  if (rawString) {
+    return Object.freeze(parseTruncatedSubagentsString(rawString));
+  }
+
+  return [];
+}
+

@@ -7,7 +7,8 @@ import {
   parseVerificationOutput,
   detectPhaseWithEvidenceFromTranscriptStep,
   detectPhaseFromTranscriptStep,
-  parseGptTokenUsageLine
+  parseGptTokenUsageLine,
+  extractSubagentInvocations
 } from "../src/main/services/transcriptParsers.js";
 
 import {
@@ -165,4 +166,76 @@ test("transcriptParsers: handles both [Workflow Applied] and [Template Applied] 
 
   assert.equal(resTemplate, "EXECUTE");
   assert.equal(resWorkflow, "EXECUTE");
+});
+
+test("transcriptParsers: subagent events never drive main loop phase detection", () => {
+  // 1. Tool call with invoke_subagent must NOT advance phase
+  const invokeStep = {
+    step_index: 5,
+    source: "MODEL",
+    type: "PLANNER_RESPONSE",
+    tool_calls: [
+      {
+        name: "invoke_subagent",
+        args: {
+          Subagents: [
+            {
+              Role: "ECC Security Reviewer",
+              Prompt: "[Template Applied]: Loaded task-reviewer-prompt.md"
+            }
+          ]
+        }
+      }
+    ]
+  };
+  assert.equal(detectPhaseWithEvidenceFromTranscriptStep(invokeStep), null);
+
+  // 2. Subagent step with phase text must NOT advance phase
+  const subagentStep = {
+    step_index: 6,
+    source: "MODEL",
+    is_subagent: true,
+    content: "[Phase: VERIFY] [Template Applied]: Loaded task-reviewer-prompt.md"
+  };
+  assert.equal(detectPhaseWithEvidenceFromTranscriptStep(subagentStep), null);
+
+  // 3. System notification message with sender must NOT advance phase
+  const systemStep = {
+    step_index: 7,
+    source: "SYSTEM",
+    type: "SYSTEM_MESSAGE",
+    content: "<SYSTEM_MESSAGE> [Message] sender=conv-123 content=Done [Phase: COMPLETE]"
+  };
+  assert.equal(detectPhaseWithEvidenceFromTranscriptStep(systemStep), null);
+});
+
+test("transcriptParsers: extractSubagentInvocations parses structured and truncated batches", () => {
+  // 1. Clean structured batch with 4 subagents
+  const structuredTc = {
+    name: "invoke_subagent",
+    args: {
+      Subagents: [
+        { Role: "Architect", Model: "gpt-4", Prompt: "Review architecture\nline 2" },
+        { Role: "Security", Model: "sonnet", Prompt: "Audit security" },
+        { Role: "Failure Hunter", Prompt: "Hunt silent bugs" },
+        { TypeName: "Tester", Prompt: "Run tests" }
+      ]
+    }
+  };
+  const extracted = extractSubagentInvocations(structuredTc);
+  assert.equal(extracted.length, 4);
+  assert.equal(extracted[0]?.role, "Architect");
+  assert.equal(extracted[0]?.model, "gpt-4");
+  assert.equal(extracted[0]?.prompt, "Review architecture\nline 2");
+  assert.equal(extracted[2]?.model, "inherit", "Model should default to inherit");
+  assert.equal(extracted[3]?.role, "Tester", "TypeName should be accepted as role alias");
+
+  // 2. Truncated JSON string batch
+  const truncatedJsonStr = '{"Subagents": [{"Role": "Agent1", "Model": "m1", "Prompt": "Prompt 1"}, {"Role": "Agent2", "Model": "m2", "Prompt": "Prompt 2';
+  const extractedTrunc = extractSubagentInvocations({ name: "invoke_subagent", args: truncatedJsonStr });
+  assert.equal(extractedTrunc.length, 2);
+  assert.equal(extractedTrunc[0]?.role, "Agent1");
+  assert.equal(extractedTrunc[0]?.prompt, "Prompt 1");
+  assert.equal(extractedTrunc[1]?.role, "Agent2");
+  assert.equal(extractedTrunc[1]?.prompt, "Prompt 2");
 });

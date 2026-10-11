@@ -110,11 +110,22 @@ export class McpMonitorService {
     return snapshot;
   }
 
-  recordToolCall(record: Omit<ToolCallRecord, "id" | "timestamp">): void {
+  recordToolCall(
+    record: Omit<ToolCallRecord, "id" | "timestamp"> & {
+      timestamp?: number | undefined;
+    }
+  ): void {
+    const timestamp =
+      typeof record.timestamp === "number" &&
+      Number.isFinite(record.timestamp) &&
+      record.timestamp >= 0
+        ? record.timestamp
+        : Date.now();
+
     const call: ToolCallRecord = {
       ...record,
       id: `call-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      timestamp: Date.now()
+      timestamp
     };
     this.recentCalls.unshift(call);
     if (this.recentCalls.length > 50) {
