@@ -614,6 +614,11 @@ export class TranscriptIngestionService {
             this.handleSubagentToolCall(step, tc, stepIdx, i);
           } else if (this.subagentService && (toolName === "manage_subagents" || toolName.endsWith(".manage_subagents"))) {
             this.handleManageSubagentsToolCall(tc);
+          } else if (this.subagentService && (toolName === "send_message" || toolName.endsWith(".send_message"))) {
+            const recipient = (args && typeof args === "object") ? ((args as Record<string, unknown>).Recipient ?? (args as Record<string, unknown>).recipient) : undefined;
+            if (typeof recipient === "string" && recipient.trim()) {
+              this.subagentService.resumeSubagent(recipient.trim(), rawTimestamp);
+            }
           }
         }
       }
@@ -1062,15 +1067,27 @@ export class TranscriptIngestionService {
 
     if (content.includes("conversationId")) {
       const ids = extractConversationIds(content);
-      if (ids.length > 0 && this.pendingSubagentsQueue.length > 0) {
-        const batch = this.pendingSubagentsQueue.shift();
-        if (batch) {
-          const limit = Math.min(batch.length, ids.length);
+      if (ids.length > 0) {
+        if (this.pendingSubagentsQueue.length > 0) {
+          const batch = this.pendingSubagentsQueue.shift();
+          if (batch) {
+            const limit = Math.min(batch.length, ids.length);
+            for (let i = 0; i < limit; i++) {
+              const subId = batch[i];
+              const convId = ids[i];
+              if (subId && convId) {
+                this.subagentService.bindConversationId(subId, convId);
+              }
+            }
+          }
+        } else {
+          const unbound = this.subagentService.getUnboundSubagents();
+          const limit = Math.min(unbound.length, ids.length);
           for (let i = 0; i < limit; i++) {
-            const subId = batch[i];
+            const sub = unbound[i];
             const convId = ids[i];
-            if (subId && convId) {
-              this.subagentService.bindConversationId(subId, convId);
+            if (sub && convId) {
+              this.subagentService.bindConversationId(sub.id, convId);
             }
           }
         }
@@ -1084,47 +1101,78 @@ export class TranscriptIngestionService {
         : undefined;
     const sender = explicitSender || extractSystemMessageSender(content);
 
-    if (sender && this.subagentService.isSubagent(sender)) {
-      const taskIdMatch = /Task\s+id\s+"([^"]+)"/i.exec(content);
-      const taskId = taskIdMatch ? taskIdMatch[1] : undefined;
+    let stepTimestamp: number | undefined;
+    if (stepObj && typeof stepObj.created_at === "string") {
+      const parsedMs = new Date(stepObj.created_at).getTime();
+      if (Number.isFinite(parsedMs) && parsedMs > 0) {
+        stepTimestamp = parsedMs;
+      }
+    }
 
-      // If a task ID is explicitly specified, ensure it belongs to the sender or a known subagent
-      const taskMatchesSender = !taskId || taskId === sender || this.subagentService.isSubagent(taskId);
+    if (sender) {
+      if (!this.subagentService.isSubagent(sender)) {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sender);
+        if (isUuid) {
+          const unbound = this.subagentService.getUnboundSubagents();
+          if (unbound.length > 0 && unbound[0]) {
+            this.subagentService.bindConversationId(unbound[0].id, sender);
+          }
+        }
+      }
 
-      if (taskMatchesSender) {
-        const isExplicitDone =
-          /\bTask\s+id\s+"[^"]+"\s+(?:finished with result|was completed with result)\b/i.test(content) ||
-          /\b(?:finished with result|was completed with result)\s*:/i.test(content) ||
-          /\bcontent=Done\b/i.test(content) ||
-          /\bcontent=Done\s+/i.test(content) ||
-          stepObj?.type === "SUBAGENT_COMPLETED";
+      if (this.subagentService.isSubagent(sender)) {
+        const taskIdMatch = /Task\s+id\s+"([^"]+)"/i.exec(content);
+        const taskId = taskIdMatch ? taskIdMatch[1] : undefined;
 
-        const isExplicitError =
-          /\bTask\s+id\s+"[^"]+"\s+(?:failed with error|terminated with error|was canceled with result)\b/i.test(content) ||
-          /\b(?:failed with error|terminated with error)\s*:/i.test(content) ||
-          /\berrored out\b/i.test(content);
+        // If a task ID is explicitly specified, ensure it belongs to the sender or a known subagent
+        const taskMatchesSender = !taskId || taskId === sender || this.subagentService.isSubagent(taskId);
 
-        const targetSubagentId = (taskId && this.subagentService.isSubagent(taskId)) ? taskId : sender;
+        if (taskMatchesSender) {
+          const isExplicitError =
+            /\bTask\s+id\s+"[^"]+"\s+(?:failed with error|terminated with error|was canceled with result)\b/i.test(content) ||
+            /\b(?:failed with error|terminated with error)\s*:/i.test(content) ||
+            /\berrored out\b/i.test(content) ||
+            stepObj?.is_error === true ||
+            stepObj?.status === "ERROR";
 
-        if (isExplicitDone) {
-          this.subagentService.markCompletedByConversationId(targetSubagentId);
-        } else if (isExplicitError) {
-          this.subagentService.updateStatus({
-            id: targetSubagentId,
-            status: "error",
-            errorMessage: content
-          });
+          const isProgressMessage =
+            /\b(?:continuing|in progress|still running|so far|progress\s*:)\b/i.test(content);
+
+          const targetSubagentId = (taskId && this.subagentService.isSubagent(taskId)) ? taskId : sender;
+
+          if (isExplicitError) {
+            this.subagentService.updateStatus({
+              id: targetSubagentId,
+              status: "error",
+              errorMessage: content,
+              timestamp: stepTimestamp
+            });
+          } else if (isProgressMessage) {
+            this.subagentService.resumeSubagent(targetSubagentId, stepTimestamp);
+          } else {
+            this.subagentService.markCompletedByConversationId(targetSubagentId, stepTimestamp);
+          }
         }
       }
     }
 
-    if (content.includes("Successfully killed")) {
-      this.subagentService.markAllCompleted();
-    } else if (content.includes('"state":"idle"')) {
-      const idleMatches = content.matchAll(/"conversationId":\s*"([^"]+)",[^}]*"state":\s*"idle"/g);
-      for (const m of idleMatches) {
-        if (m[1]) {
-          this.subagentService.markIdleByConversationId(m[1]);
+    if (content.includes("Successfully killed") || /\bYou have 0 active subagent/i.test(content)) {
+      this.subagentService.markAllCompleted(stepTimestamp);
+    } else if (content.includes('"conversationId"') && (content.includes('"state"') || content.includes('active subagent'))) {
+      const stateMatches = content.matchAll(/"conversationId":\s*"([^"]+)",[^}]*"state":\s*"([^"]+)"/g);
+      for (const m of stateMatches) {
+        const convId = m[1];
+        const state = m[2];
+        if (convId && state) {
+          if (state === "idle") {
+            this.subagentService.markIdleByConversationId(convId, stepTimestamp);
+          } else if (state === "completed") {
+            this.subagentService.markCompletedByConversationId(convId, stepTimestamp);
+          } else if (state === "errored") {
+            this.subagentService.updateStatus({ id: convId, status: "error", timestamp: stepTimestamp });
+          } else if (state === "running") {
+            this.subagentService.resumeSubagent(convId, stepTimestamp);
+          }
         }
       }
     }

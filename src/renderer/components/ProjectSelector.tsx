@@ -6,7 +6,7 @@ export const ProjectSelector: React.FC = () => {
   const [projectState, setProjectState] = useState<ProjectState | null>(null);
   const [workspaceContext, setWorkspaceContext] = useState<WorkspaceContext | null>(null);
   const [stealthStatus, setStealthStatus] = useState<WorkspaceStealthStatus | null>(null);
-  const [includeDesignPack, setIncludeDesignPack] = useState<boolean>(false);
+  const [includeDesignPack, setIncludeDesignPack] = useState<boolean>(true);
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isActionPending, setIsActionPending] = useState<boolean>(false);
@@ -170,6 +170,12 @@ export const ProjectSelector: React.FC = () => {
 
   const current = projectState?.currentProject;
 
+  const effectiveRulesCount =
+    workspaceContext?.rules.reduce(
+      (total, block) => total + (block.sectionCount ?? 1),
+      0
+    ) ?? 0;
+
   return (
     <div className="relative z-50 ml-2" ref={containerRef}>
       {/* Trigger Button */}
@@ -194,8 +200,11 @@ export const ProjectSelector: React.FC = () => {
           {current ? current.name : "No Project"}
         </span>
         {workspaceContext && (
-          <span className="px-1 text-[9px] bg-emerald-950/70 border border-emerald-500/40 text-emerald-400 rounded shrink-0">
-            {workspaceContext.rules.length} rules
+          <span
+            className="px-1 text-[9px] bg-emerald-950/70 border border-emerald-500/40 text-emerald-400 rounded shrink-0 font-mono"
+            title={`${effectiveRulesCount} technical rules active`}
+          >
+            {effectiveRulesCount} rules
           </span>
         )}
         {stealthStatus?.equipped && (

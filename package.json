@@ -22,9 +22,11 @@
     "preflight": "node scripts/preflight.mjs",
     "app:dev": "node node_modules/vite/bin/vite.js",
     "app:start": "node node_modules/electron/cli.js dist/src/main/index.js",
-    "pack:prepare": "npm run build",
-    "package": "npm run build",
-    "dist": "npm run build",
+    "pack:prepare": "node scripts/bundle-all.mjs && npm run build",
+    "package": "npm run build && npx electron-builder --dir",
+    "pack": "npm run build && npx electron-builder --dir",
+    "dist": "npm run build && npx electron-builder",
+    "dist:portable": "npm run build && npx electron-builder --win portable",
     "build:docker": "docker exec kins_autonomous_sandbox npm run build",
     "loop": "node scripts/ai-loop.mjs",
     "scaffold:new": "node scripts/init-template.mjs",
@@ -52,6 +54,55 @@
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
-    "vite": "^6.2.0"
+    "vite": "^6.2.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.kins.cockpit",
+    "productName": "Kin's Cockpit",
+    "npmRebuild": false,
+    "copyright": "Copyright © 2026 Kin",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/bundled",
+        "to": "bundled",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "assets",
+        "to": "assets",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "asarUnpack": [
+      "**/node_modules/node-pty/**/*",
+      "dist/src/cli/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Kin's Cockpit",
+      "include": "scripts/installer/prerequisites.nsh"
+    }
   }
 }

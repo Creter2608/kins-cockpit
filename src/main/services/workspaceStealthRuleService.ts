@@ -130,7 +130,7 @@ export class WorkspaceStealthRuleService {
   ): Promise<StealthEquipResult> {
     return this.runSerialized(context.id, async () => {
       const targets: readonly StealthRuleTarget[] = options?.targets ?? ["agents", "claude"];
-      const includeDesignPack = Boolean(options?.includeDesignPack);
+      const includeDesignPack = options?.includeDesignPack ?? true;
       const workspaceRoot = context.root;
       const excludePath = await this.resolveGitExcludePath(workspaceRoot);
 

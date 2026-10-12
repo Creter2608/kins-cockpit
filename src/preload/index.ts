@@ -140,6 +140,18 @@ const cockpitApi: CockpitApi = {
     getCatalog: () => ipcRenderer.invoke(ECC_IPC_CHANNELS.GET_CATALOG),
     refreshCatalog: () => ipcRenderer.invoke(ECC_IPC_CHANNELS.REFRESH_CATALOG),
     dispatch: (request: EccDispatchRequest) => ipcRenderer.invoke(ECC_IPC_CHANNELS.DISPATCH, request)
+  },
+  readiness: {
+    getSnapshot: () => ipcRenderer.invoke("readiness:getSnapshot"),
+    refresh: () => ipcRenderer.invoke("readiness:refresh"),
+    onSnapshot: (listener: (snapshot: import("../shared/systemReadiness.js").SystemReadinessSnapshot) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, snapshot: import("../shared/systemReadiness.js").SystemReadinessSnapshot) => listener(snapshot);
+      ipcRenderer.on("readiness:snapshot", handler);
+      return () => ipcRenderer.removeListener("readiness:snapshot", handler);
+    }
+  },
+  app: {
+    quit: () => ipcRenderer.invoke("app:quit")
   }
 };
 

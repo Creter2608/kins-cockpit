@@ -170,8 +170,14 @@ import { compileFrontendDesignStealthPack } from "./frontendDesignStealthPack.js
 
 export class RuleBundleCompilerService {
   compilePhaseTemplates(options?: { templatesDir?: string }): Record<EnforcedTemplatePhase, CompiledPhaseTemplate> {
+    const proc = process as unknown as { resourcesPath?: string };
+    const bundledPath = proc?.resourcesPath && syncFs.existsSync(path.join(proc.resourcesPath, "bundled", "superpowers"))
+      ? path.join(proc.resourcesPath, "bundled", "superpowers")
+      : path.resolve(process.cwd(), "resources", "bundled", "superpowers");
+    const fallbackDir = path.join(os.homedir(), ".gemini", "config", "plugins", "superpowers", "skills");
+
     const baseDir = options?.templatesDir ??
-      path.join(os.homedir(), ".gemini", "config", "plugins", "superpowers", "skills");
+      (syncFs.existsSync(bundledPath) ? bundledPath : fallbackDir);
 
     const result = {} as Record<EnforcedTemplatePhase, CompiledPhaseTemplate>;
 

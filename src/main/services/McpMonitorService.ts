@@ -9,6 +9,7 @@ export const PROJECT_MCP_CONFIG_PATHS = [
   ".mcp.json",
 ] as const;
 
+
 export class McpMonitorService {
   private projectRoot: string;
   private globalMcpDirs: string[];
@@ -20,6 +21,9 @@ export class McpMonitorService {
   constructor(
     projectRoot: string = process.cwd(),
     globalMcpDirs: string[] = [
+      (process.resourcesPath
+        ? path.join(process.resourcesPath, "bundled", "mcp-schemas")
+        : path.join(process.cwd(), "resources", "bundled", "mcp-schemas")),
       path.join(process.env.USERPROFILE || process.env.HOME || "", ".gemini", "antigravity", "mcp"),
       path.join(process.env.USERPROFILE || process.env.HOME || "", ".gemini", "antigravity-cli", "mcp")
     ]

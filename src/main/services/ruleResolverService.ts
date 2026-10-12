@@ -113,10 +113,12 @@ export class RuleResolverService {
       const fullPath = path.join(repoRoot, rel);
       const content = this.safeReadFile(fullPath);
       if (content) {
+        const { sectionCount, sectionNames } = extractTechnicalRuleSections(content);
         results.push({
           source: "repository-native",
           origin: fullPath,
-          content: content.slice(0, MAX_BLOCK_CHARS)
+          content: content.slice(0, MAX_BLOCK_CHARS),
+          ...(sectionCount > 0 ? { sectionCount, sectionNames } : {})
         });
       }
     }
@@ -157,4 +159,44 @@ export class RuleResolverService {
     }
     return null;
   }
+}
+
+export function extractTechnicalRuleSections(markdown: string): {
+  readonly sectionCount: number;
+  readonly sectionNames: readonly string[];
+} {
+  const CORE_SECTION_PATTERNS: Array<{ readonly id: string; readonly pattern: RegExp }> = [
+    { id: "Autonomous Loop v3.0", pattern: /autonomous\s+loop(?:\s+v3\.0)?/i },
+    { id: "Core Operating Invariants", pattern: /core\s+operating\s+invariants/i },
+    { id: "CodeGraph Context Extraction", pattern: /codegraph(?:\s*&\s*|\s+)context\s+extraction/i },
+    { id: "Superpowers Template Enforcement", pattern: /superpowers\s+template\s+enforcement/i },
+    { id: "Karpathy Behavioral Invariants", pattern: /karpathy(?:\s+behavioral)?\s+invariants/i },
+    { id: "Agency Core Checkpoints", pattern: /agency\s+core\s+checkpoints/i },
+  ];
+
+  const matched = new Set<string>();
+  const sectionNames: string[] = [];
+
+  // Strip fenced code blocks to ignore markdown examples inside code
+  const stripped = markdown.replace(/```[\s\S]*?```/g, "");
+
+  const lines = stripped.split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^#{1,3}\s+/.test(trimmed)) {
+      const headingText = trimmed.replace(/^#{1,3}\s+/, "");
+      for (const section of CORE_SECTION_PATTERNS) {
+        if (!matched.has(section.id) && section.pattern.test(headingText)) {
+          matched.add(section.id);
+          sectionNames.push(section.id);
+          break;
+        }
+      }
+    }
+  }
+
+  return {
+    sectionCount: sectionNames.length,
+    sectionNames: Object.freeze(sectionNames)
+  };
 }

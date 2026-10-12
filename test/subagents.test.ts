@@ -381,3 +381,119 @@ test("subagents: Assertion 6 - JSON-stringified Subagents args, conversationId b
   assert.equal(fresh.status, "completed", "Fresh worker must be completed by kill_all");
 });
 
+test("subagents: Assertion 7 - real-world Markdown audit report completes subagent, send_message resumes, and 0 active subagents marks all completed", () => {
+  const telemetry = new TelemetryService();
+  const mcp = new McpMonitorService();
+  const subagentService = new SubagentService(() => 5000);
+  const ingestion = new TranscriptIngestionService(telemetry, mcp, null, null, subagentService);
+
+  // 1. Tool call invoke_subagent
+  const invokeLine = JSON.stringify({
+    step_index: 200,
+    source: "MODEL",
+    type: "PLANNER_RESPONSE",
+    created_at: "2026-10-12T12:00:00.000Z",
+    tool_calls: [
+      {
+        name: "invoke_subagent",
+        args: {
+          Subagents: [
+            {
+              Role: "ECC Silent Failure Hunter",
+              Model: "inherit",
+              Prompt: "Audit codebase for silent failures and swallowed errors"
+            }
+          ]
+        }
+      }
+    ]
+  });
+  ingestion.processLine(invokeLine);
+
+  let list = subagentService.list();
+  assert.equal(list.length, 1);
+  const hunter = list[0];
+  assert.ok(hunter);
+  assert.equal(hunter.role, "ECC Silent Failure Hunter");
+  assert.equal(hunter.status, "running");
+
+  // 2. Tool output with conversationId
+  const toolResultLine = JSON.stringify({
+    step_index: 201,
+    source: "MODEL",
+    type: "GENERIC",
+    created_at: "2026-10-12T12:00:05.000Z",
+    content: `Created the following subagents:
+{
+  "conversationId":  "conv-ecc-hunter-uuid-1234",
+  "logAbsoluteUri":  "file:///logs/hunter.jsonl"
+}`
+  });
+  ingestion.processLine(toolResultLine);
+
+  // 3. Real-world SYSTEM_MESSAGE: subagent returns an exhaustive Markdown audit report (no "content=Done")
+  const reportTime = "2026-10-12T12:05:00.000Z";
+  const reportTimeMs = new Date(reportTime).getTime();
+  const messageLine = JSON.stringify({
+    step_index: 202,
+    source: "SYSTEM",
+    type: "SYSTEM_MESSAGE",
+    status: "DONE",
+    created_at: reportTime,
+    content: `The following is a <SYSTEM_MESSAGE> not actually sent by the user. It is provided by the system as important information to pay attention to.
+
+<SYSTEM_MESSAGE>
+[Message] timestamp=${reportTime} sender=conv-ecc-hunter-uuid-1234 priority=MESSAGE_PRIORITY_HIGH content=# Exhaustive Security Audit Report: Kin's Cockpit Codebase & Packaged Assets
+
+## 1. Executive Summary
+The security audit identified 0 critical vulnerabilities. All packaging invariants hold.
+</SYSTEM_MESSAGE>`
+  });
+  ingestion.processLine(messageLine);
+
+  list = subagentService.list();
+  const completedHunter = list[0];
+  assert.ok(completedHunter);
+  assert.equal(completedHunter.status, "completed", "Subagent must transition to completed on receiving Markdown report message");
+  assert.equal(completedHunter.completedAt, reportTimeMs, "completedAt must reflect message created_at timestamp");
+
+  // 4. send_message tool call resumes subagent to running
+  const resumeLine = JSON.stringify({
+    step_index: 203,
+    source: "MODEL",
+    type: "PLANNER_RESPONSE",
+    created_at: "2026-10-12T12:06:00.000Z",
+    tool_calls: [
+      {
+        name: "send_message",
+        args: {
+          Recipient: "conv-ecc-hunter-uuid-1234",
+          Message: "Please also verify scripts/bundle-all.mjs assertion"
+        }
+      }
+    ]
+  });
+  ingestion.processLine(resumeLine);
+
+  list = subagentService.list();
+  const resumedHunter = list[0];
+  assert.ok(resumedHunter);
+  assert.equal(resumedHunter.status, "running", "send_message to subagent must transition status back to running");
+  assert.equal(resumedHunter.completedAt, undefined, "completedAt must be cleared when resumed");
+
+  // 5. manage_subagents returning "You have 0 active subagent(s)" completes all active subagents
+  const listZeroLine = JSON.stringify({
+    step_index: 204,
+    source: "MODEL",
+    type: "GENERIC",
+    created_at: "2026-10-12T12:07:00.000Z",
+    content: "Created At: 2026-10-12T19:07:00+07:00\nCompleted At: 2026-10-12T19:07:01+07:00\nYou have 0 active subagent(s):\n[]"
+  });
+  ingestion.processLine(listZeroLine);
+
+  list = subagentService.list();
+  const zeroHunter = list[0];
+  assert.ok(zeroHunter);
+  assert.equal(zeroHunter.status, "completed", "manage_subagents 0 active subagents output must transition running subagent to completed");
+});
+

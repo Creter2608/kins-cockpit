@@ -9,3 +9,5 @@ Thumbs.db
 .env.*
 *.pem
 *.key
+release/
+resources/bundled/

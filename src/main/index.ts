@@ -9,6 +9,7 @@ import { McpMonitorService } from "./services/McpMonitorService.js";
 import { CriticalLogService } from "./services/CriticalLogService.js";
 import { TelemetryService } from "./services/TelemetryService.js";
 import { DockerStatusService } from "./services/DockerStatusService.js";
+import { SystemReadinessService } from "./services/SystemReadinessService.js";
 import { RollbackService } from "./services/RollbackService.js";
 import { TranscriptIngestionService } from "./services/TranscriptIngestionService.js";
 import { WorktreeAttributionService } from "./services/WorktreeAttributionService.js";
@@ -31,7 +32,10 @@ let mainWindow: BrowserWindow | null = null;
 let teardownIpc: (() => void) | null = null;
 
 // Determine absolute project repository root
-const projectRoot = path.resolve(__dirname, "../../..");
+const isPackaged = app.isPackaged;
+const projectRoot = isPackaged
+  ? path.dirname(app.getPath("exe"))
+  : path.resolve(__dirname, "../../..");
 
 // Instantiate backend services with deterministic absolute paths
 const ptyService = new PtyService(projectRoot);
@@ -40,6 +44,7 @@ const mcpService = new McpMonitorService(projectRoot);
 const logService = new CriticalLogService();
 const telemetryService = new TelemetryService();
 const dockerService = new DockerStatusService();
+const systemReadinessService = new SystemReadinessService(dockerService);
 const rollbackService = new RollbackService(projectRoot, projectRoot);
 const evalService = new EvalHarnessService(projectRoot, projectRoot);
 const subagentService = new SubagentService();
@@ -47,7 +52,16 @@ const preToolUseHookService = new PreToolUseHookService();
 const worktreeService = new WorktreeAttributionService();
 const contextOptimizationService = new ContextOptimizationService();
 const providerCapacityService = new ProviderCapacityService();
-const eccCatalogPath = process.env.ECC_PATH || path.resolve(projectRoot, "../ECC");
+
+// Resolves bundled ECC first, then env or local sibling path
+const resourcesPath = (process as unknown as { resourcesPath?: string }).resourcesPath;
+const bundledEccPath = resourcesPath && fs.existsSync(path.join(resourcesPath, "bundled", "ecc"))
+  ? path.join(resourcesPath, "bundled", "ecc")
+  : (fs.existsSync(path.resolve(__dirname, "../../resources/bundled/ecc"))
+    ? path.resolve(__dirname, "../../resources/bundled/ecc")
+    : path.resolve(projectRoot, "resources/bundled/ecc"));
+const eccCatalogPath = process.env.ECC_PATH ||
+  (fs.existsSync(bundledEccPath) ? bundledEccPath : path.resolve(projectRoot, "../ECC"));
 const eccCatalogService = new EccCatalogService(eccCatalogPath);
 const eccDispatcherService = new EccDispatcherService(eccCatalogService, subagentService);
 const transcriptService = new TranscriptIngestionService(telemetryService, mcpService, loopService, null, subagentService);
@@ -124,14 +138,25 @@ async function createWindow(): Promise<void> {
     console.error(`[CRITICAL] Preload artifact missing at: ${preloadPath}`);
   }
 
+  const assetsDir = resourcesPath && fs.existsSync(path.join(resourcesPath, "assets"))
+    ? path.join(resourcesPath, "assets")
+    : path.resolve(projectRoot, "assets");
+  const iconIco = path.join(assetsDir, "icon.ico");
+  const iconPng = path.join(assetsDir, "icon.png");
+  const iconSvg = path.join(assetsDir, "icon.svg");
+  const iconPath = fs.existsSync(iconIco)
+    ? iconIco
+    : (fs.existsSync(iconPng) ? iconPng : (fs.existsSync(iconSvg) ? iconSvg : undefined));
+
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
     minWidth: 1024,
     minHeight: 680,
     backgroundColor: "#000000",
-    title: "Kins Multi-Agents Cockpit",
+    title: "Kin's Cockpit",
     titleBarStyle: "hiddenInset",
+    ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
@@ -189,7 +214,8 @@ async function createWindow(): Promise<void> {
     contextOptimization: contextOptimizationService,
     providerCapacity: providerCapacityService,
     eccCatalog: eccCatalogService,
-    eccDispatcher: eccDispatcherService
+    eccDispatcher: eccDispatcherService,
+    systemReadiness: systemReadinessService
   });
 
   // Push immediate snapshots as soon as renderer is ready
@@ -233,6 +259,10 @@ async function createWindow(): Promise<void> {
 }
 
 app.whenReady().then(() => {
+  app.setName("Kin's Cockpit");
+  if (process.platform === "win32") {
+    app.setAppUserModelId("com.kins.cockpit");
+  }
   setupSecurityHeaders();
   createWindow();
 
@@ -258,9 +288,18 @@ app.on("before-quit", () => {
   mcpService.dispose();
   logService.dispose();
   dockerService.dispose();
+  systemReadinessService.dispose();
   telemetryService.dispose();
   transcriptService.dispose();
   eccCatalogService.dispose();
   void evalService.dispose();
   void harnessService?.dispose();
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("[CRITICAL] Main process uncaughtException:", error);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[CRITICAL] Main process unhandledRejection:", reason);
 });

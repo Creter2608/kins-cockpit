@@ -320,6 +320,8 @@ export interface ResolvedRuleBlock {
   readonly source: RuleSource;
   readonly origin: string;
   readonly content: string;
+  readonly sectionCount?: number;
+  readonly sectionNames?: readonly string[];
 }
 
 export interface WorkspaceRecord {
@@ -439,6 +441,14 @@ export interface CockpitApi {
     readonly refresh: () => Promise<{ success: boolean }>;
   };
   readonly ecc?: EccApi;
+  readonly readiness?: {
+    readonly getSnapshot: () => Promise<import("./systemReadiness.js").SystemReadinessSnapshot>;
+    readonly refresh: () => Promise<import("./systemReadiness.js").SystemReadinessSnapshot>;
+    readonly onSnapshot: (listener: (snapshot: import("./systemReadiness.js").SystemReadinessSnapshot) => void) => Unsubscribe;
+  };
+  readonly app?: {
+    readonly quit: () => Promise<void>;
+  };
 }
 
 export interface CockpitApiHarness {

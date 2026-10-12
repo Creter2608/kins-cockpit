@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import type {
   CockpitApi,
   LoopStateSnapshot,
@@ -18,6 +18,8 @@ import { TelemetryHud } from "./components/TelemetryHud.js";
 import { ProjectSelector } from "./components/ProjectSelector.js";
 import { EvalScoreboard } from "./components/EvalScoreboard.js";
 import { RunActivityPanel } from "./components/RunActivityPanel.js";
+import { SystemReadinessModal } from "./components/SystemReadinessModal.js";
+import type { SystemReadinessSnapshot } from "../shared/systemReadiness.js";
 import type { SessionEvent } from "../shared/harnessContracts.js";
 import type { PollableBridge } from "./vite-env.js";
 import "./styles/cockpit.css";
@@ -100,6 +102,49 @@ export const App: React.FC = () => {
 
   const [bridgeConnected, setBridgeConnected] = useState<boolean>(true);
 
+  const [readinessSnapshot, setReadinessSnapshot] = useState<SystemReadinessSnapshot | null>(null);
+  const [readinessModalOpen, setReadinessModalOpen] = useState<boolean>(false);
+  const [readinessRefreshing, setReadinessRefreshing] = useState<boolean>(false);
+  const [readinessError, setReadinessError] = useState<string | null>(null);
+  const hasDismissedReadinessRef = useRef<boolean>(false);
+  const lastWasDegradedRef = useRef<boolean>(false);
+
+  const handleReadinessSnapshot = useCallback((snapshot: SystemReadinessSnapshot) => {
+    setReadinessSnapshot(snapshot);
+    setReadinessError(null);
+    if (!snapshot.ready) {
+      if (!lastWasDegradedRef.current) {
+        lastWasDegradedRef.current = true;
+        if (!hasDismissedReadinessRef.current) {
+          setReadinessModalOpen(true);
+        }
+      }
+    } else {
+      lastWasDegradedRef.current = false;
+      hasDismissedReadinessRef.current = false;
+    }
+  }, []);
+
+  const handleManualReadinessRefresh = useCallback(async () => {
+    const api = window.cockpitApi;
+    if (!api?.readiness) return;
+    setReadinessRefreshing(true);
+    setReadinessError(null);
+    try {
+      const snap = await api.readiness.refresh();
+      handleReadinessSnapshot(snap);
+    } catch (err: unknown) {
+      setReadinessError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setReadinessRefreshing(false);
+    }
+  }, [handleReadinessSnapshot]);
+
+  const handleOpenReadinessModal = useCallback(() => {
+    setReadinessModalOpen(true);
+    void handleManualReadinessRefresh();
+  }, [handleManualReadinessRefresh]);
+
   useEffect(() => {
     const api = window.cockpitApi;
     if (!api) {
@@ -154,6 +199,9 @@ export const App: React.FC = () => {
     const unsubHarnessSnap = api.harness?.onSnapshot?.((events) => {
       setHarnessEvents(events);
     });
+    const unsubReadiness = api.readiness?.onSnapshot?.((snap) => {
+      handleReadinessSnapshot(snap);
+    });
 
     // 2. Fetch initial snapshots independently so one failure does not block the rest
     void api.loop.getSnapshot().then(setLoopState).catch((err) => {
@@ -187,6 +235,17 @@ export const App: React.FC = () => {
     }).catch((err) => {
       console.error("[Cockpit] Failed to fetch harness events:", err);
     });
+    void api.readiness?.getSnapshot?.().then((snap) => {
+      if (snap) handleReadinessSnapshot(snap);
+    }).catch((err) => {
+      console.error("[Cockpit] Failed to fetch initial readiness snapshot:", err);
+    });
+
+    const readinessTimer = setInterval(() => {
+      void api.readiness?.refresh?.().then((snap) => {
+        if (snap) handleReadinessSnapshot(snap);
+      }).catch(() => {});
+    }, 30_000);
 
     const hostEnv = typeof window !== "undefined" ? window : globalThis;
     const pollApi = api as unknown as (typeof api & PollableBridge);
@@ -302,6 +361,8 @@ export const App: React.FC = () => {
       unsubSubagents?.();
       unsubHarness?.();
       unsubHarnessSnap?.();
+      unsubReadiness?.();
+      clearInterval(readinessTimer);
     };
   }, []);
 
@@ -419,6 +480,23 @@ export const App: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-2.5">
+          <button
+            type="button"
+            onClick={handleOpenReadinessModal}
+            className={`flex items-center space-x-1.5 px-2.5 py-1 text-xs rounded-md border font-sans font-medium transition-colors cursor-pointer ${
+              readinessSnapshot?.ready
+                ? "bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800"
+                : "bg-amber-950/40 border-amber-800/80 text-amber-300 hover:bg-amber-900/50"
+            }`}
+            title="Kiểm tra điều kiện tiên quyết hệ thống"
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                readinessSnapshot?.ready ? "bg-emerald-400" : "bg-amber-400 animate-pulse motion-reduce:animate-none"
+              }`}
+            />
+            <span>{readinessSnapshot?.ready ? "System Ready" : "Preflight Check"}</span>
+          </button>
           {!bridgeConnected && (
             <span className="text-xs px-2.5 py-0.5 rounded-md bg-rose-950/60 text-rose-300 border border-rose-800/80 font-mono font-bold">
               IPC BRIDGE OFFLINE
@@ -515,6 +593,22 @@ export const App: React.FC = () => {
 
       {/* Bottom Area: Telemetry HUD */}
       <TelemetryHud telemetry={telemetry} />
+
+      {/* System Readiness & Preflight Health Check Modal */}
+      <SystemReadinessModal
+        open={readinessModalOpen}
+        snapshot={readinessSnapshot}
+        refreshing={readinessRefreshing}
+        error={readinessError}
+        onRefresh={handleManualReadinessRefresh}
+        onContinue={() => {
+          setReadinessModalOpen(false);
+          hasDismissedReadinessRef.current = true;
+        }}
+        onExit={() => {
+          void window.cockpitApi?.app?.quit?.();
+        }}
+      />
     </div>
   );
 };

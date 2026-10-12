@@ -75,6 +75,21 @@ export class SubagentService {
     return ids;
   }
 
+  getUnboundSubagents(): StoredSubagent[] {
+    const aliasedCanonicalIds = new Set(this.aliases.values());
+    const unbound: StoredSubagent[] = [];
+    for (let i = this.order.length - 1; i >= 0; i--) {
+      const id = this.order[i];
+      if (id && !aliasedCanonicalIds.has(id)) {
+        const rec = this.records.get(id);
+        if (rec && rec.status === "running") {
+          unbound.push(rec);
+        }
+      }
+    }
+    return unbound;
+  }
+
   recordInvocation(input: SubagentInvocationInput): SubagentActivity {
     const canonicalId = this.resolveCanonicalId(input.id);
     const existing = this.records.get(canonicalId);

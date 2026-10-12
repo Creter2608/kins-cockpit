@@ -1,5 +1,5 @@
 @echo off
-title Kins Multi-Agents Cockpit
+title Kin's Cockpit
 cd /d "%~dp0"
 
 if not exist "dist\src\main\index.js" (

@@ -14,6 +14,7 @@ import type { ContextOptimizationService } from "./services/ContextOptimizationS
 import type { ProviderCapacityService } from "./services/ProviderCapacityService.js";
 import type { EccCatalogService } from "./services/EccCatalogService.js";
 import type { EccDispatcherService } from "./services/EccDispatcherService.js";
+import type { SystemReadinessService } from "./services/SystemReadinessService.js";
 import { SUBAGENT_IPC_CHANNELS, ECC_IPC_CHANNELS, type ProjectState, type ContextItem, type ProviderCapacity, type EccDispatchRequest, type DeriveMessagesOptions } from "../shared/contracts.js";
 
 export interface ServiceContainer {
@@ -31,6 +32,7 @@ export interface ServiceContainer {
   providerCapacity?: ProviderCapacityService | undefined;
   eccCatalog?: EccCatalogService | undefined;
   eccDispatcher?: EccDispatcherService | undefined;
+  systemReadiness?: SystemReadinessService | undefined;
 }
 
 export function registerIpcHandlers(window: BrowserWindow, services: ServiceContainer): () => void {
@@ -342,12 +344,35 @@ export function registerIpcHandlers(window: BrowserWindow, services: ServiceCont
     });
   }
 
+  if (services.systemReadiness) {
+    ipcMain.handle("readiness:getSnapshot", async () => {
+      return services.systemReadiness!.refresh();
+    });
+    ipcMain.handle("readiness:refresh", async () => {
+      return services.systemReadiness!.refresh();
+    });
+    const unsubReadiness = services.systemReadiness.subscribe((snap) => {
+      if (!window.isDestroyed()) {
+        window.webContents.send("readiness:snapshot", snap);
+      }
+    });
+    unsubs.push(unsubReadiness);
+  }
+
+  ipcMain.handle("app:quit", async () => {
+    const { app } = await import("electron");
+    app.quit();
+  });
+
   return () => {
     services.project.setOnProjectSwitched?.(null);
     services.project.setOnWorkspaceContextChanged?.(null);
     for (const unsub of unsubs) {
       unsub();
     }
+    ipcMain.removeHandler("readiness:getSnapshot");
+    ipcMain.removeHandler("readiness:refresh");
+    ipcMain.removeHandler("app:quit");
     ipcMain.removeHandler(ECC_IPC_CHANNELS.GET_CATALOG);
     ipcMain.removeHandler(ECC_IPC_CHANNELS.REFRESH_CATALOG);
     ipcMain.removeHandler(ECC_IPC_CHANNELS.DISPATCH);
