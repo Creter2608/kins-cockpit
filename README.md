@@ -11,7 +11,7 @@
 
 **Kin's Multi-Agents UI** (Kin's Cockpit) is a high-performance desktop mission-control cockpit engineered for autonomous AI pair programming across agentic CLI runtimes (Google Antigravity CLI, Claude Code, Cursor, Windsurf). It unifies interactive ConPTY terminal sessions, real-time telemetry HUD accounting, 10-phase autonomous loop orchestration, DeepSeek Harness bounded execution sandboxing, cryptographic pre-tool policy gates, and Docker container isolation into a single production workstation.
 
-Repository: **[https://github.com/Creter2608/kins-multiagents-ui](https://github.com/Creter2608/kins-multiagents-ui)**
+Repository: **[https://github.com/Creter2608/kins-cockpit](https://github.com/Creter2608/kins-cockpit)**
 
 ---
 
@@ -221,7 +221,7 @@ kins-multiagents-ui/
 
 For host-level development and desktop launcher execution:
 ```bash
-git clone https://github.com/Creter2608/kins-multiagents-ui.git
+git clone https://github.com/Creter2608/kins-cockpit.git
 cd kins-multiagents-ui
 npm install
 ```
