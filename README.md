@@ -176,7 +176,7 @@ Located in the persistent cockpit footer, the Telemetry HUD tracks real-time usa
 ### Repository Structure
 
 ```text
-kins-multiagents-ui/
+kins-cockpit/
 ├── src/
 │   ├── main/                  # Electron Main Process
 │   │   ├── harness/           # DeepSeek Harness Runtime (SandboxPolicy, ExecutionGuard, SessionJournal, ToolPlanExecutor)
@@ -222,7 +222,7 @@ kins-multiagents-ui/
 For host-level development and desktop launcher execution:
 ```bash
 git clone https://github.com/Creter2608/kins-cockpit.git
-cd kins-multiagents-ui
+cd kins-cockpit
 npm install
 ```
 
