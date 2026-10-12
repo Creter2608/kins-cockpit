@@ -223,7 +223,7 @@ const PhaseTrackerComponent: React.FC<PhaseTrackerProps> = ({
   // Workload tokens: GPT Oracle calls + Gemini generation tokens (never include static context window in budget)
   const telemetryWorkloadTokens = gptTokens + geminiOutputTokens;
   const effectiveTokens = stateTokens > 0 ? stateTokens : telemetryWorkloadTokens;
-  const maxTokens = loopState.resourceBudget?.maxTokens ?? 120_000;
+  const maxTokens = loopState.resourceBudget?.maxTokens ?? 180_000;
   const geminiContextTokens = Math.max(
     telemetry?.currentSession?.gemini?.inputTokens ?? 0,
     telemetry?.geminiPromptTokens ?? 0
@@ -605,7 +605,7 @@ const PhaseTrackerComponent: React.FC<PhaseTrackerProps> = ({
             }`}
             title={`LoopState: ${(loopState.resourceUsage?.totalTokens ?? 0).toLocaleString("en-US")} | Telemetry Workload: ${telemetryWorkloadTokens.toLocaleString("en-US")} (GPT: ${gptTokens.toLocaleString("en-US")}, Gen: ${geminiOutputTokens.toLocaleString("en-US")}) | Active Context: ${geminiContextTokens.toLocaleString("en-US")}`}
           >
-            {(effectiveTokens > 0 ? effectiveTokens : (loopState.resourceUsage?.totalTokens ?? 0)).toLocaleString("en-US")} / {(loopState.resourceBudget?.maxTokens ?? 120_000).toLocaleString("en-US")}
+            {(effectiveTokens > 0 ? effectiveTokens : (loopState.resourceUsage?.totalTokens ?? 0)).toLocaleString("en-US")} / {(loopState.resourceBudget?.maxTokens ?? 180_000).toLocaleString("en-US")}
           </span>
         </div>
 

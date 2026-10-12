@@ -206,7 +206,7 @@ export interface OracleTelemetry {
 
 export const DEFAULT_RESOURCE_BUDGET: ResourceBudget = {
   maxCostMicroUsd: 1_000_000,
-  maxTokens: 120_000,
+  maxTokens: 180_000,
   maxOracleCalls: 2,
   maxGlobalCycles: 2,
   maxVerificationRetries: 1,

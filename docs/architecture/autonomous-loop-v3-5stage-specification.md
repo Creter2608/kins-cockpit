@@ -82,7 +82,7 @@ export const AUTONOMOUS_LOOP_V3_BUDGET = {
   // 1. TÀI CHÍNH & TOKEN
   MAX_COST_USD: 1.00,                 // Trần an toàn tuyệt đối ($1.00)
   SOFT_ALERT_COST_USD: 0.50,          // Cảnh báo mềm
-  MAX_TOKENS_PER_RUN: 120_000,        // Nâng từ 60k -> 120k (đáp ứng 2 lượt Reasoning)
+  MAX_TOKENS_PER_RUN: 180_000,        // Nâng từ 60k -> 120k (đáp ứng 2 lượt Reasoning)
 
   // 2. GIỚI HẠN VÒNG LẶP (Fail-Fast)
   GLOBAL_CYCLES_MAX: 2,               // Tối đa 2 chu kỳ toàn cục (tránh cù cưa)

@@ -244,8 +244,8 @@ export class SystemReadinessService {
       return {
         id: "docker",
         state: "unavailable",
-        detail: "Docker daemon socket or named pipe unavailable.",
-        copyCommand: "docker start kins_autonomous_sandbox"
+        detail: "Docker daemon socket or named pipe unavailable. Launch Docker Desktop, wait for daemon to become ready, then retry.",
+        copyCommand: "winget install Docker.DockerDesktop -e"
       };
     }
   }
@@ -282,8 +282,8 @@ export class SystemReadinessService {
           id: "docker",
           state: "unavailable",
           version: "Daemon Offline",
-          detail: "Docker Desktop daemon is offline or not installed. Required for isolated test execution.",
-          copyCommand: "docker start kins_autonomous_sandbox"
+          detail: "Docker Desktop daemon is offline or not installed. Launch Docker Desktop (or install with winget install Docker.DockerDesktop -e), wait for daemon, then retry.",
+          copyCommand: "winget install Docker.DockerDesktop -e"
         };
     }
   }
@@ -329,8 +329,7 @@ export class SystemReadinessService {
       id: "antigravity",
       state: "missing",
       detail:
-        "Antigravity CLI (agy) not found in PATH or standard install locations (%LOCALAPPDATA%\\agy\\bin). Required for agent orchestration.",
-      copyCommand: "winget install Google.Antigravity"
+        "Antigravity CLI (agy) not found in PATH or standard install locations (%LOCALAPPDATA%\\agy\\bin). Install agy binary and add to PATH."
     };
   }
 
@@ -446,8 +445,7 @@ export class SystemReadinessService {
       return {
         id: "codegraph",
         state: "unavailable",
-        detail: "CodeGraph execution failed or returned invalid version output. Check permissions or installation integrity.",
-        copyCommand: "npm install -g @codegraph/cli"
+        detail: "CodeGraph execution failed or returned invalid version output. Reinstall from GitHub releases or check permissions."
       };
     }
 
@@ -455,8 +453,7 @@ export class SystemReadinessService {
       id: "codegraph",
       state: "missing",
       detail:
-        "CodeGraph CLI not found in PATH or standard install location (%LOCALAPPDATA%\\codegraph\\current\\bin). Required for structural code navigation.",
-      copyCommand: "npm install -g @codegraph/cli"
+        "CodeGraph CLI not found in PATH or %LOCALAPPDATA%\\codegraph\\current\\bin. Download from GitHub releases or clone repository."
     };
   }
 

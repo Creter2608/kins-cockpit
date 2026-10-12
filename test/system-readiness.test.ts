@@ -421,7 +421,7 @@ test("CodeGraph Golden Assertion 3: all CodeGraph candidates absent -> missing; 
   assert.equal(cg?.state, "missing");
   assert.equal(snapshot.ready, false, "Missing CodeGraph must block overall readiness");
   assert.match(cg?.detail ?? "", /CodeGraph CLI not found/);
-  assert.equal(cg?.copyCommand, "npm install -g @codegraph/cli");
+  assert.equal(cg?.copyCommand, undefined);
 
   service.dispose();
 });
