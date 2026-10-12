@@ -1,7 +1,7 @@
 /**
  * src/main/harness/InnerStepDriver.ts
  * Sequential, bounded inner turn and step execution driver.
- * Operates inside Phase EXECUTE of Kin's Multi-Agents UI Outer FSM.
+ * Operates inside Phase EXECUTE of Kin's Cockpit Outer FSM.
  * Adapted from DeepSeek Harness agent-loop architecture.
  *
  * Invariants:

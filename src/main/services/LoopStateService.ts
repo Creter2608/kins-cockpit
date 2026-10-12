@@ -108,7 +108,15 @@ export function resolveLoopStatePath(workspaceRoot: string, sidecarDirectory?: s
   // Derive safe deterministic user sidecar path based on workspace root hash to avoid polluting external repo!
   const safeId = crypto.createHash("sha256").update(resolvedPath).digest("hex").slice(0, 16);
   const baseUserData = process.env.APPDATA || (process.platform === "darwin" ? path.join(os.homedir(), "Library", "Application Support") : path.join(os.homedir(), ".config"));
-  return path.join(baseUserData, "kins-multiagents-ui", "workspaces", safeId, "sidecar", "state", "state.json");
+  const cockpitState = path.join(baseUserData, "kins-cockpit", "workspaces", safeId, "sidecar", "state", "state.json");
+  const legacyState = path.join(baseUserData, "kins-multiagents-ui", "workspaces", safeId, "sidecar", "state", "state.json");
+  if (fs.existsSync(cockpitState)) {
+    return cockpitState;
+  }
+  if (fs.existsSync(legacyState)) {
+    return legacyState;
+  }
+  return cockpitState;
 }
 
 export interface RunResetTransitionInput {

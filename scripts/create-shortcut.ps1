@@ -1,5 +1,5 @@
-﻿$desktop = [Environment]::GetFolderPath("Desktop")
-$shortcutPath = Join-Path $desktop "Kins Multi-Agents Cockpit.lnk"
+$desktop = [Environment]::GetFolderPath("Desktop")
+$shortcutPath = Join-Path $desktop "Kin's Cockpit.lnk"
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $electronExe = Join-Path $repoRoot "node_modules\electron\dist\electron.exe"
 $mainJs = "dist\src\main\index.js"
@@ -14,7 +14,7 @@ $sc = $wsh.CreateShortcut($shortcutPath)
 $sc.TargetPath = $electronExe
 $sc.Arguments = $mainJs
 $sc.WorkingDirectory = $repoRoot
-$sc.Description = "Kin's Multi-Agents UI Cockpit"
+$sc.Description = "Kin's Cockpit"
 $sc.Save()
 
 Write-Host "Created shortcut: $shortcutPath" -ForegroundColor Green

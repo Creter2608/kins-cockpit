@@ -1,4 +1,4 @@
-# Kin's Multi-Agents UI (Cockpit)
+# Kin's Cockpit
 
 > Desktop mission-control cockpit designed for autonomous AI pair programming (Antigravity CLI, Claude Code, Cursor) with real-time telemetry, 10-phase loop orchestration, and Docker isolation.
 > Repository: https://github.com/Creter2608/kins-cockpit

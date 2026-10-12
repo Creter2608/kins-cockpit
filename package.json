@@ -1,8 +1,8 @@
 {
-  "name": "kins-multiagents-ui",
+  "name": "kins-cockpit",
   "version": "3.0.0",
   "description": "Desktop mission-control cockpit for autonomous AI pair programming",
-  "productName": "Kin's Multi-Agents UI",
+  "productName": "Kin's Cockpit",
   "private": true,
   "type": "module",
   "main": "dist/src/main/index.js",

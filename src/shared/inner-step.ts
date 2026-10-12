@@ -1,7 +1,7 @@
 /**
  * src/shared/inner-step.ts
  * Core contracts for the Inner Step Loop (AgentDriver / InnerStepDriver)
- * operating inside Phase EXECUTE of Kin's Multi-Agents UI.
+ * operating inside Phase EXECUTE of Kin's Cockpit.
  * Adapted from DeepSeek Harness runtime loop patterns.
  */
 

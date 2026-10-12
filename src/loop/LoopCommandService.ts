@@ -227,11 +227,14 @@ export class LoopCommandService {
       candidates.push(envUserData);
     }
     if (process.platform === "win32" && process.env.APPDATA) {
+      candidates.push(path.join(process.env.APPDATA, "kins-cockpit"));
       candidates.push(path.join(process.env.APPDATA, "kins-multiagents-ui"));
     } else if (process.platform === "darwin") {
+      candidates.push(path.join(os.homedir(), "Library", "Application Support", "kins-cockpit"));
       candidates.push(path.join(os.homedir(), "Library", "Application Support", "kins-multiagents-ui"));
     } else if (process.platform === "linux") {
       const xdg = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
+      candidates.push(path.join(xdg, "kins-cockpit"));
       candidates.push(path.join(xdg, "kins-multiagents-ui"));
     }
     candidates.push(path.join(os.homedir(), ".gemini", "antigravity-cli", "userData"));

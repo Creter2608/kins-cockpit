@@ -1,4 +1,4 @@
-# Kin's Multi-Agents UI 🤖⚡
+# Kin's Cockpit 🤖⚡
 
 [![Release: v3.0.0](https://img.shields.io/badge/Release-v3.0.0-emerald.svg)](package.json)
 [![Tests: 597 passing](https://img.shields.io/badge/Tests-597%20passing-brightgreen.svg)](package.json)
@@ -9,7 +9,7 @@
 [![Tailwind CSS](https://img.shields.io/badge/TailwindCSS-3.4-38bdf8.svg)](https://tailwindcss.com/)
 [![Docker Sandbox](https://img.shields.io/badge/Docker-Sandboxed-2496ed.svg)](https://www.docker.com/)
 
-**Kin's Multi-Agents UI** (Kin's Cockpit) is a high-performance desktop mission-control cockpit engineered for autonomous AI pair programming across agentic CLI runtimes (Google Antigravity CLI, Claude Code, Cursor, Windsurf). It unifies interactive ConPTY terminal sessions, real-time telemetry HUD accounting, 10-phase autonomous loop orchestration, DeepSeek Harness bounded execution sandboxing, cryptographic pre-tool policy gates, and Docker container isolation into a single production workstation.
+**Kin's Cockpit** (formerly Kin's Multi-Agents UI) is a high-performance desktop mission-control cockpit engineered for autonomous AI pair programming across agentic CLI runtimes (Google Antigravity CLI, Claude Code, Cursor, Windsurf). It unifies interactive ConPTY terminal sessions, real-time telemetry HUD accounting, 10-phase autonomous loop orchestration, DeepSeek Harness bounded execution sandboxing, cryptographic pre-tool policy gates, and Docker container isolation into a single production workstation.
 
 Repository: **[https://github.com/Creter2608/kins-cockpit](https://github.com/Creter2608/kins-cockpit)**
 

@@ -26,7 +26,7 @@ test("standalone-integrity: template scaffold is excluded from runtime and lifec
   const packageText = await readFile("package.json", "utf8");
   const manifest = JSON.parse(packageText) as PackageManifest;
 
-  assert.equal(manifest.productName, "Kin's Multi-Agents UI");
+  assert.equal(manifest.productName, "Kin's Cockpit");
   assert.ok(manifest.scripts, "package.json must define scripts");
 
   const prohibitedHooks = [

@@ -98,17 +98,24 @@ export function resolveDefaultUserDataPath(env: NodeJS.ProcessEnv = process.env)
     return env.ANTIGRAVITY_HOOK_USER_DATA;
   }
   let cockpitPath: string | null = null;
+  let legacyCockpitPath: string | null = null;
   if (process.platform === "win32" && env.APPDATA) {
-    cockpitPath = path.join(env.APPDATA, "kins-multiagents-ui");
+    cockpitPath = path.join(env.APPDATA, "kins-cockpit");
+    legacyCockpitPath = path.join(env.APPDATA, "kins-multiagents-ui");
   } else if (process.platform === "darwin") {
-    cockpitPath = path.join(os.homedir(), "Library", "Application Support", "kins-multiagents-ui");
+    cockpitPath = path.join(os.homedir(), "Library", "Application Support", "kins-cockpit");
+    legacyCockpitPath = path.join(os.homedir(), "Library", "Application Support", "kins-multiagents-ui");
   } else if (process.platform === "linux") {
     const xdg = env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
-    cockpitPath = path.join(xdg, "kins-multiagents-ui");
+    cockpitPath = path.join(xdg, "kins-cockpit");
+    legacyCockpitPath = path.join(xdg, "kins-multiagents-ui");
   }
 
   if (cockpitPath && syncFs.existsSync(path.join(cockpitPath, "hooks", "workspaces.json"))) {
     return cockpitPath;
+  }
+  if (legacyCockpitPath && syncFs.existsSync(path.join(legacyCockpitPath, "hooks", "workspaces.json"))) {
+    return legacyCockpitPath;
   }
 
   return path.join(os.homedir(), ".gemini", "antigravity-cli", "userData");
