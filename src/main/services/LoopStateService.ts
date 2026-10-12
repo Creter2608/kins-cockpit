@@ -24,6 +24,7 @@ import type {
 import { DEFAULT_RESOURCE_BUDGET, EMPTY_RESOURCE_USAGE, type ArchitectureTaskType } from "../../engine.js";
 import { JsonFileLoopStateStore, LoopCommandService } from "../../loop/index.js";
 import { PreToolUseHookService } from "./preToolUseHookService.js";
+import { isLoopTransitionAllowed } from "./loopTransitionGuard.js";
 
 export function parseLoopStateJson(content: string): Partial<LoopStateSnapshot> {
   const parsed = JSON.parse(content);
@@ -922,6 +923,12 @@ export class LoopStateService {
     for (let i = currentIdx + 1; i <= targetIdx; i++) {
       const nextPhase = LOOP_PHASES[i];
       if (!nextPhase) break;
+
+      const fresh = this.readState();
+      if (!isLoopTransitionAllowed(fresh.currentPhase as LoopPhase, nextPhase, fresh, evidence, targetPhase)) {
+        return false;
+      }
+
       const isTarget = i === targetIdx;
       const ok = this.transitionPhase(nextPhase, {
         triggeredBy: isTarget

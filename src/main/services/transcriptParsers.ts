@@ -218,20 +218,21 @@ export function detectPhaseWithEvidenceFromTranscriptStep(step: unknown): PhaseD
     const isModelStep = s.source === "MODEL" || s.type === "PLANNER_RESPONSE";
     if (isModelStep) {
       if (
-        /\b(hoàn thành|đã hoàn thành|hoàn tất|task completed|work is complete|successfully implemented|all tests passed|release complete|pipeline complete)\b/i.test(combined) ||
-        /\[Phase:\s*COMPLETE\]/i.test(combined)
+        /\b(all tests passed|tất cả tests đã pass|tests passed)\b/i.test(combined) ||
+        /\b(reality check|reality audit|kiểm tra thực tế|pre-completion audit)\b/i.test(combined) ||
+        /\[Phase:\s*REALITY_CHECK\]/i.test(combined)
       ) {
-        candidates.push({ phase: "COMPLETE", evidence: "completion reported" });
+        candidates.push({ phase: "REALITY_CHECK", evidence: "reality check reported" });
       } else if (
         /\b(release gate|ready for release|chờ nghiệm thu|sign-off|human sign-off)\b/i.test(combined) ||
         /\[Phase:\s*RELEASE_GATE\]/i.test(combined)
       ) {
         candidates.push({ phase: "RELEASE_GATE", evidence: "release gate reported" });
       } else if (
-        /\b(reality check|reality audit|kiểm tra thực tế|pre-completion audit)\b/i.test(combined) ||
-        /\[Phase:\s*REALITY_CHECK\]/i.test(combined)
+        /\b(hoàn thành|đã hoàn thành|hoàn tất|task completed|work is complete|successfully implemented|release complete|pipeline complete)\b/i.test(combined) ||
+        /\[Phase:\s*COMPLETE\]/i.test(combined)
       ) {
-        candidates.push({ phase: "REALITY_CHECK", evidence: "reality check reported" });
+        candidates.push({ phase: "COMPLETE", evidence: "completion reported" });
       }
     }
   }
