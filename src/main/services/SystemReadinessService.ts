@@ -11,15 +11,13 @@
 
 import { execFile, type ExecFileOptions } from "node:child_process";
 import { promisify } from "node:util";
+import * as syncFs from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
 import type { DockerStatusService } from "./DockerStatusService.js";
 import type { DockerSandboxStatus } from "../../shared/contracts.js";
-import type {
-  PrerequisiteReadiness,
-  SystemReadinessSnapshot
-} from "../../shared/systemReadiness.js";
+import type { PrerequisiteReadiness, SystemReadinessSnapshot } from "../../shared/systemReadiness.js";
 import { maskCredential, extractOpenAiKeyFromMcpJson } from "./credentialMasker.js";
 
 const defaultExecFileAsync = promisify(execFile);
@@ -29,11 +27,25 @@ const defaultExecFileWrapper = async (
   args: readonly string[],
   options?: unknown
 ): Promise<{ stdout: string; stderr: string }> => {
-  const res = await defaultExecFileAsync(
-    file,
-    [...args],
-    (options as ExecFileOptions) ?? {}
-  );
+  let execTarget = file;
+  let execArgs = [...args];
+  const execOptions = ((options as ExecFileOptions) ?? {}) as ExecFileOptions;
+
+  if (
+    process.platform === "win32" &&
+    (file.toLowerCase().endsWith(".cmd") || file.toLowerCase().endsWith(".bat"))
+  ) {
+    if (!syncFs.existsSync(file)) {
+      const err = new Error(`spawn ${file} ENOENT`);
+      (err as { code?: string }).code = "ENOENT";
+      throw err;
+    }
+    const comSpec = process.env.ComSpec || "cmd.exe";
+    execTarget = comSpec;
+    execArgs = ["/d", "/c", "call", file, ...args];
+  }
+
+  const res = await defaultExecFileAsync(execTarget, execArgs, execOptions);
   return { stdout: String(res.stdout), stderr: String(res.stderr) };
 };
 
@@ -423,7 +435,7 @@ export class SystemReadinessService {
           executionFailedOrUnusable = true;
         }
       } catch (err: unknown) {
-        const code = (err as { code?: string } | null | undefined)?.code;
+        const code = (err as { code?: string | number } | null | undefined)?.code;
         if (code !== "ENOENT") {
           executionFailedOrUnusable = true;
         }

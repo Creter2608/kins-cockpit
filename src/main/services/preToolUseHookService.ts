@@ -60,9 +60,11 @@ export function resolveDefaultRuntimeCommand(): string {
     moduleDirectory,
     "../../../dist/src/cli/preToolUseHook.js"
   );
-  const hookPath = syncFs.existsSync(moduleRelativeHookPath)
-    ? moduleRelativeHookPath
-    : sourceTreeFallbackPath;
+  let hookPath = syncFs.existsSync(moduleRelativeHookPath) ? moduleRelativeHookPath : sourceTreeFallbackPath;
+  const unpackedPath = hookPath.replace(/app\.asar/g, 'app.asar.unpacked');
+  if (syncFs.existsSync(unpackedPath)) {
+    hookPath = unpackedPath;
+  }
 
   const normalizedHookPath = hookPath.replace(/\\/g, "/");
   return normalizedHookPath.includes(" ") ? `node "${normalizedHookPath}"` : `node ${normalizedHookPath}`;
