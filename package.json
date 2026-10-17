@@ -10,7 +10,8 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "prepare": "node scripts/install-git-hooks.mjs",
+    "prepare": "node scripts/install-git-hooks.mjs && node scripts/setup-mcp.mjs",
+    "setup:mcp": "node scripts/setup-mcp.mjs",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "build:preload": "node -e \"require('esbuild').buildSync({ entryPoints: ['src/preload/index.ts'], outfile: 'dist/src/preload/index.cjs', format: 'cjs', platform: 'node', external: ['electron'], bundle: true })\"",
     "build:node": "node node_modules/typescript/bin/tsc -p tsconfig.json && npm run build:preload",

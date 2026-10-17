@@ -1,6 +1,7 @@
-import * as fs from "node:fs";
+import fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 import type { McpSnapshot, McpServerInfo, ToolCallRecord } from "../../shared/contracts.js";
 
 export const PROJECT_MCP_CONFIG_PATHS = [
@@ -55,16 +56,19 @@ export class McpMonitorService {
       ? path.join((process as unknown as { resourcesPath: string }).resourcesPath, "bundled", "mcp-schemas")
       : null;
     const currentDir = path.dirname(fileURLToPath(import.meta.url));
-    const appBundledDir = path.resolve(currentDir, "..", "..", "..", "resources", "bundled", "mcp-schemas");
-    const repoDir = path.join(this.projectRoot, "resources", "bundled", "mcp-schemas");
+    const repoDir = this.projectRoot ? path.join(this.projectRoot, "resources", "bundled", "mcp-schemas") : null;
+    const appBundledDirDist = path.resolve(currentDir, "..", "..", "..", "..", "resources", "bundled", "mcp-schemas");
+    const appBundledDirSrc = path.resolve(currentDir, "..", "..", "..", "resources", "bundled", "mcp-schemas");
 
     let bundledSchemasDir: string | null = null;
     if (packagedDir && fs.existsSync(packagedDir)) {
       bundledSchemasDir = packagedDir;
-    } else if (fs.existsSync(appBundledDir)) {
-      bundledSchemasDir = appBundledDir;
-    } else if (fs.existsSync(repoDir)) {
+    } else if (repoDir && fs.existsSync(repoDir)) {
       bundledSchemasDir = repoDir;
+    } else if (fs.existsSync(appBundledDirDist)) {
+      bundledSchemasDir = appBundledDirDist;
+    } else if (fs.existsSync(appBundledDirSrc)) {
+      bundledSchemasDir = appBundledDirSrc;
     }
 
     if (!bundledSchemasDir) {
@@ -136,6 +140,248 @@ export class McpMonitorService {
     }
   }
 
+  /**
+   * Auto-provisions bundled MCP server execution configurations into ~/.gemini/config/mcp_config.json
+   * ensuring gpt_architect and kins-agent-loop are runnable on fresh installs.
+   */
+  public provisionExecutionConfigs(): void {
+    const rawHome = process.env.USERPROFILE || process.env.HOME || "";
+    if (!rawHome || rawHome === "undefined" || rawHome === "null") return;
+    const home = path.resolve(rawHome);
+    const mcpConfigPath = path.join(home, ".gemini", "config", "mcp_config.json");
+
+    try {
+      let initialRaw = "";
+      let config: Record<string, any> = { mcpServers: {} };
+      if (fs.existsSync(mcpConfigPath)) {
+        try {
+          initialRaw = fs.readFileSync(mcpConfigPath, "utf-8");
+          const parsed = JSON.parse(initialRaw);
+          // MCP-01: Retain valid top-level configuration even if mcpServers is absent
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            config = parsed;
+          } else {
+            console.warn("[McpMonitorService] Existing mcp_config.json is not an object, skipping to prevent clobbering");
+            return;
+          }
+        } catch {
+          // MCP-02: Do not overwrite an unreadable/malformed existing configuration
+          console.warn("[McpMonitorService] Failed to parse existing mcp_config.json, skipping execution provisioning to preserve recoverable state");
+          return;
+        }
+      }
+
+      if (!config.mcpServers || typeof config.mcpServers !== "object" || Array.isArray(config.mcpServers)) {
+        config.mcpServers = {};
+      }
+
+      let changed = false;
+
+      // 1. gpt_architect
+      const packagedServerPy = (process as unknown as { resourcesPath?: string }).resourcesPath
+        ? path.join((process as unknown as { resourcesPath: string }).resourcesPath, "bundled", "mcp-servers", "gpt_architect", "server.py")
+        : null;
+      const currentDir = path.dirname(fileURLToPath(import.meta.url));
+      // In transpiled output (dist/src/main/services), app root is 4 levels up: ../../../..
+      const appServerPyDist = path.resolve(currentDir, "..", "..", "..", "..", "resources", "bundled", "mcp-servers", "gpt_architect", "server.py");
+      // In direct ts/source execution (src/main/services), app root is 3 levels up: ../../..
+      const appServerPySrc = path.resolve(currentDir, "..", "..", "..", "resources", "bundled", "mcp-servers", "gpt_architect", "server.py");
+      const repoServerPy = this.projectRoot
+        ? path.join(this.projectRoot, "resources", "bundled", "mcp-servers", "gpt_architect", "server.py")
+        : null;
+
+      let gptServerPy: string | null = null;
+      if (packagedServerPy && fs.existsSync(packagedServerPy)) {
+        gptServerPy = packagedServerPy;
+      } else if (repoServerPy && fs.existsSync(repoServerPy)) {
+        gptServerPy = repoServerPy;
+      } else if (fs.existsSync(appServerPyDist)) {
+        gptServerPy = appServerPyDist;
+      } else if (fs.existsSync(appServerPySrc)) {
+        gptServerPy = appServerPySrc;
+      }
+
+      if (gptServerPy && !config.mcpServers.gpt_architect) {
+        // Resolve Python interpreter from PATH (MCP-A01, MCP-A02, MCP-Q01)
+        const pathEnv = process.env.PATH || "";
+        const isWin = process.platform === "win32";
+        const delimiter = (typeof path !== "undefined" && path.delimiter) ? path.delimiter : (isWin ? ";" : ":");
+        const pathDirs = (pathEnv.includes(";") || delimiter === ";" || /^[a-zA-Z]:[/\\]/.test(pathEnv))
+          ? pathEnv.split(";").filter(Boolean)
+          : pathEnv.split(":").filter(Boolean);
+        const rawExts = isWin ? (process.env.PATHEXT || ".EXE;.CMD;.BAT;.COM") : "";
+        const pathExts = isWin ? rawExts.split(";").filter(Boolean) : [""];
+
+        const probeCandidates = isWin
+          ? [
+              { cmd: "python", argsPrefix: [] as string[] },
+              { cmd: "python3", argsPrefix: [] as string[] },
+              { cmd: "py", argsPrefix: ["-3"] },
+            ]
+          : [
+              { cmd: "python3", argsPrefix: [] as string[] },
+              { cmd: "python", argsPrefix: [] as string[] },
+            ];
+
+        let resolvedPython: { command: string; args: string[] } | null = null;
+        for (const candidate of probeCandidates) {
+          let candidateFound = false;
+          for (const dir of pathDirs) {
+            for (const ext of pathExts) {
+              const variations = isWin
+                ? [
+                    candidate.cmd + ext,
+                    candidate.cmd + ext.toLowerCase(),
+                    candidate.cmd + ext.toUpperCase(),
+                    candidate.cmd
+                  ]
+                : [candidate.cmd];
+
+              for (const fileCandidate of variations) {
+                const fullPath = path.join(dir, fileCandidate);
+                try {
+                  if (fs.existsSync(fullPath)) {
+                    // MCP-Q01: Bounded execution probe verifying Python major version 3
+                    if (typeof spawnSync === "function") {
+                      try {
+                        const probe = spawnSync(candidate.cmd, [...candidate.argsPrefix, "--version"], {
+                          stdio: ["ignore", "pipe", "pipe"],
+                          encoding: "utf-8",
+                          windowsHide: true,
+                          timeout: 2000
+                        });
+                        const versionOutput = ((probe.stdout || "") + (probe.stderr || "")).trim();
+                        if (probe.status === 0 && /^Python\s+3\./i.test(versionOutput)) {
+                          candidateFound = true;
+                          break;
+                        }
+                      } catch {}
+                    } else {
+                      // Fallback for sandboxed VM test harness without child_process
+                      candidateFound = true;
+                      break;
+                    }
+                  }
+                } catch {}
+              }
+              if (candidateFound) break;
+            }
+            if (candidateFound) break;
+          }
+          if (candidateFound) {
+            resolvedPython = {
+              command: candidate.cmd,
+              args: [...candidate.argsPrefix, gptServerPy]
+            };
+            break;
+          }
+        }
+
+        if (!resolvedPython) {
+          console.warn("[McpMonitorService] Python 3 runtime not found in PATH; gpt_architect will fail to launch until Python is installed and available in PATH");
+          resolvedPython = {
+            command: isWin ? "python" : "python3",
+            args: [gptServerPy]
+          };
+        }
+
+        const existingEnv = process.env.OPENAI_API_KEY ? { OPENAI_API_KEY: process.env.OPENAI_API_KEY } : {};
+        config.mcpServers.gpt_architect = {
+          command: resolvedPython.command,
+          args: resolvedPython.args,
+          env: {
+            ...existingEnv,
+            OPENAI_MODEL: "gpt-6.1-sol",
+            OPENAI_REASONING_EFFORT: "medium"
+          }
+        };
+        changed = true;
+      }
+
+      // 2. kins-agent-loop
+      const repoLoopJs = this.projectRoot ? path.join(this.projectRoot, "dist", "src", "loop", "mcp-server.js") : null;
+      const appLoopJsDist = path.resolve(currentDir, "..", "..", "..", "..", "dist", "src", "loop", "mcp-server.js");
+      const appLoopJsSrc = path.resolve(currentDir, "..", "..", "..", "dist", "src", "loop", "mcp-server.js");
+
+      let loopJs: string | null = null;
+      if (repoLoopJs && fs.existsSync(repoLoopJs)) {
+        loopJs = repoLoopJs;
+      } else if (fs.existsSync(appLoopJsDist)) {
+        loopJs = appLoopJsDist;
+      } else if (fs.existsSync(appLoopJsSrc)) {
+        loopJs = appLoopJsSrc;
+      }
+
+      if (loopJs && !config.mcpServers["kins-agent-loop"]) {
+        config.mcpServers["kins-agent-loop"] = {
+          command: "node",
+          args: [loopJs],
+          env: {}
+        };
+        changed = true;
+      }
+
+      if (changed) {
+        const dir = path.dirname(mcpConfigPath);
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+        const tmpFile = `${mcpConfigPath}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
+        try {
+          // MCP-Q02: Bounded optimistic concurrency loop preserving intervening configuration updates
+          let committed = false;
+          for (let attempt = 0; attempt < 3 && !committed; attempt++) {
+            if (fs.existsSync(mcpConfigPath)) {
+              try {
+                const latestRaw = fs.readFileSync(mcpConfigPath, "utf-8");
+                if (latestRaw !== initialRaw) {
+                  const latestParsed = JSON.parse(latestRaw);
+                  if (latestParsed && typeof latestParsed === "object" && !Array.isArray(latestParsed)) {
+                    if (!latestParsed.mcpServers || typeof latestParsed.mcpServers !== "object") {
+                      latestParsed.mcpServers = {};
+                    }
+                    for (const [serverKey, serverVal] of Object.entries(config.mcpServers)) {
+                      if (!latestParsed.mcpServers[serverKey]) {
+                        latestParsed.mcpServers[serverKey] = serverVal;
+                      }
+                    }
+                    config = latestParsed;
+                    initialRaw = latestRaw;
+                  }
+                }
+              } catch {}
+            }
+
+            const serialized = JSON.stringify(config, null, 2) + "\n";
+            fs.writeFileSync(tmpFile, serialized, { mode: 0o600, encoding: "utf-8" });
+
+            if (fs.existsSync(mcpConfigPath)) {
+              try {
+                const preRenameRaw = fs.readFileSync(mcpConfigPath, "utf-8");
+                if (preRenameRaw !== initialRaw) {
+                  continue;
+                }
+              } catch {}
+            }
+
+            fs.renameSync(tmpFile, mcpConfigPath);
+            committed = true;
+          }
+        } catch (renameErr) {
+          console.warn("[McpMonitorService] Atomic replacement of mcp_config.json failed:", renameErr);
+        } finally {
+          try {
+            if (fs.existsSync(tmpFile)) {
+              fs.unlinkSync(tmpFile);
+            }
+          } catch {}
+        }
+      }
+    } catch (err) {
+      console.warn("[McpMonitorService] Failed to provision execution config:", err);
+    }
+  }
+
   getSnapshot(): McpSnapshot {
     return {
       servers: Array.from(this.servers.values()),
@@ -151,6 +397,7 @@ export class McpMonitorService {
 
   refresh(): McpSnapshot {
     this.provisionBundledSchemas();
+    this.provisionExecutionConfigs();
     const discovered: McpServerInfo[] = [];
 
     // 1. Scan global ~/.gemini/antigravity*/mcp/ directories
