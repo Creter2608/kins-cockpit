@@ -71,14 +71,19 @@ export function buildSanitizedPtyEnv(
     sanitized["KINS_COCKPIT_ACTIVE"] = "1";
 
     let userDataDir: string;
+    const isWindowsPath = /^[a-zA-Z]:[\\\/]/.test(workspaceContext.sidecarDirectory) || workspaceContext.sidecarDirectory.includes("\\");
     const sidecarNorm = workspaceContext.sidecarDirectory.replace(/\\/g, "/");
     const workspacesIdx = sidecarNorm.lastIndexOf("/workspaces");
     if (workspacesIdx > 0) {
       userDataDir = workspaceContext.sidecarDirectory.slice(0, workspacesIdx);
     } else {
-      userDataDir = path.resolve(workspaceContext.sidecarDirectory, "../..");
+      userDataDir = isWindowsPath
+        ? path.win32.resolve(workspaceContext.sidecarDirectory, "../..")
+        : path.resolve(workspaceContext.sidecarDirectory, "../..");
     }
-    sanitized["ANTIGRAVITY_HOOKS_CONFIG_PATH"] = path.join(userDataDir, "hooks", "hooks.json");
+    sanitized["ANTIGRAVITY_HOOKS_CONFIG_PATH"] = isWindowsPath
+      ? path.win32.join(userDataDir, "hooks", "hooks.json")
+      : path.join(userDataDir, "hooks", "hooks.json");
 
     const harnessPaths = resolveHarnessResourcePaths(harnessOptions);
     sanitized["KINS_HARNESS_DIR"] = harnessPaths.scriptsDirectory;
