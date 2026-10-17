@@ -16,6 +16,7 @@ import {
 } from "../main/services/blueprintApprovalAuthenticator.js";
 import {
   evaluateWorkspaceMutationPolicy,
+  evaluateOperatingModeMutationPolicy,
   type WorkspaceMutationPolicyMode
 } from "../shared/workspaceMutationPolicy.js";
 import { resolveWorkspaceStateFile } from "../shared/workspaceStatePaths.js";
@@ -306,47 +307,6 @@ export async function evaluatePreToolUseHook(
     };
   }
 
-  let mode: WorkspaceMutationPolicyMode = "strict";
-  if (matchedWorkspace.mutationPolicyMode !== undefined) {
-    const rawMode = matchedWorkspace.mutationPolicyMode;
-    if (rawMode !== "strict" && rawMode !== "documentation-fast-path") {
-      return {
-        decision: "deny",
-        reason: `Hook denied: invalid mutation policy mode '${String(rawMode)}' in workspace registry`
-      };
-    }
-    mode = rawMode;
-  }
-
-  // Load state.json after verifying registry authentication
-  let stateFilePath: string;
-  try {
-    const resolution = resolveWorkspaceStateFile(
-      {
-        canonicalWorkspaceRoot: matchedWorkspace.canonicalWorkspacePath,
-        sidecarStateFile: matchedWorkspace.sidecarStatePath
-      },
-      "read"
-    );
-    stateFilePath = resolution.stateFile;
-  } catch (err) {
-    return {
-      decision: "deny",
-      reason: `Hook denied: state path resolution failed: ${err instanceof Error ? err.message : String(err)}`
-    };
-  }
-
-  let state: LoopState;
-  try {
-    const stateRaw = await fs.readFile(stateFilePath, "utf-8");
-    state = JSON.parse(stateRaw);
-  } catch (err) {
-    return {
-      decision: "deny",
-      reason: `Hook denied: failed to read state at '${stateFilePath}': ${err instanceof Error ? err.message : String(err)}`
-    };
-  }
-
   // Invariant 1: Protected Evaluation Zone (.eval/) is strictly read-only
   if (
     canonicalTarget.includes("/.eval/") ||
@@ -401,6 +361,94 @@ export async function evaluatePreToolUseHook(
     }
   } catch {
     // Ignore error reading stealth manifest
+  }
+
+  // 0. Operating Mode Check: Discussion is read-only; Tweak is bounded mutation without requiring Loop state.json
+  // Downgrade defense: Require schemaVersion >= 2 before honoring operatingMode
+  const operatingMode = (matchedWorkspace.schemaVersion && matchedWorkspace.schemaVersion >= 2)
+    ? (matchedWorkspace.operatingMode ?? "loop")
+    : "loop";
+
+  if (operatingMode === "discussion") {
+    return {
+      decision: "deny",
+      reason: "Chế độ Thảo luận (Discussion) là Read-only. Không được phép chỉnh sửa tập tin. Hãy chuyển công tắc sang 'Tinh chỉnh' hoặc 'Loop'."
+    };
+  }
+
+  if (operatingMode === "tweak") {
+    const toolArgs = payload.toolCall?.args;
+    let proposedLineCount: number | undefined;
+
+    if (toolArgs) {
+      if (typeof toolArgs.ReplacementContent === "string") {
+        proposedLineCount = toolArgs.ReplacementContent.split(/\r?\n/).length;
+      } else if (typeof toolArgs.CodeContent === "string") {
+        proposedLineCount = toolArgs.CodeContent.split(/\r?\n/).length;
+      }
+    }
+
+    const tweakResult = evaluateOperatingModeMutationPolicy(
+      {
+        mode: "tweak",
+        authorizationRevision: matchedWorkspace.authorizationRevision,
+        tweakScope: matchedWorkspace.tweakScope,
+        proposedLineCount
+      },
+      [canonicalTarget],
+      matchedWorkspace.canonicalWorkspacePath
+    );
+    if (!tweakResult.allowed) {
+      return {
+        decision: "deny",
+        reason: `[TWEAK_GATE] ${tweakResult.reason}`
+      };
+    }
+    return {
+      decision: "allow",
+      reason: tweakResult.reason
+    };
+  }
+
+  let mode: WorkspaceMutationPolicyMode = "strict";
+  if (matchedWorkspace.mutationPolicyMode !== undefined) {
+    const rawMode = matchedWorkspace.mutationPolicyMode;
+    if (rawMode !== "strict" && rawMode !== "documentation-fast-path") {
+      return {
+        decision: "deny",
+        reason: `Hook denied: invalid mutation policy mode '${String(rawMode)}' in workspace registry`
+      };
+    }
+    mode = rawMode;
+  }
+
+  // Load state.json after verifying registry authentication
+  let stateFilePath: string;
+  try {
+    const resolution = resolveWorkspaceStateFile(
+      {
+        canonicalWorkspaceRoot: matchedWorkspace.canonicalWorkspacePath,
+        sidecarStateFile: matchedWorkspace.sidecarStatePath
+      },
+      "read"
+    );
+    stateFilePath = resolution.stateFile;
+  } catch (err) {
+    return {
+      decision: "deny",
+      reason: `Hook denied: state path resolution failed: ${err instanceof Error ? err.message : String(err)}`
+    };
+  }
+
+  let state: LoopState;
+  try {
+    const stateRaw = await fs.readFile(stateFilePath, "utf-8");
+    state = JSON.parse(stateRaw);
+  } catch (err) {
+    return {
+      decision: "deny",
+      reason: `Hook denied: failed to read state at '${stateFilePath}': ${err instanceof Error ? err.message : String(err)}`
+    };
   }
 
   // 1. If fast-path mode is active, check if target is an inert documentation file

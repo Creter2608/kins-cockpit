@@ -13,7 +13,9 @@ import type {
   SessionEvent,
   ProviderCapacity,
   EccDispatchRequest,
-  DeriveMessagesOptions
+  DeriveMessagesOptions,
+  ProjectState,
+  WorkspaceContext
 } from "../shared/contracts.js";
 import { SUBAGENT_IPC_CHANNELS, ECC_IPC_CHANNELS } from "../shared/contracts.js";
 
@@ -27,13 +29,13 @@ const cockpitApi: CockpitApi = {
     equipStealthRules: (options) => ipcRenderer.invoke("project:equip-stealth-rules", options),
     unequipStealthRules: () => ipcRenderer.invoke("project:unequip-stealth-rules"),
     getStealthStatus: () => ipcRenderer.invoke("project:get-stealth-status"),
-    onProjectChanged: (listener: (state: any) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, state: any) => listener(state);
+    onProjectChanged: (listener: (state: ProjectState) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, state: ProjectState) => listener(state);
       ipcRenderer.on("project:changed", handler);
       return () => ipcRenderer.removeListener("project:changed", handler);
     },
-    onWorkspaceContextChanged: (listener: (context: any) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, ctx: any) => listener(ctx);
+    onWorkspaceContextChanged: (listener: (context: WorkspaceContext) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, ctx: WorkspaceContext) => listener(ctx);
       ipcRenderer.on("project:workspace-context-changed", handler);
       return () => ipcRenderer.removeListener("project:workspace-context-changed", handler);
     }
@@ -150,6 +152,19 @@ const cockpitApi: CockpitApi = {
       const handler = (_event: Electron.IpcRendererEvent, snapshot: import("../shared/systemReadiness.js").SystemReadinessSnapshot) => listener(snapshot);
       ipcRenderer.on("readiness:snapshot", handler);
       return () => ipcRenderer.removeListener("readiness:snapshot", handler);
+    }
+  },
+  operatingMode: {
+    getSnapshot: (workspacePath?: string) => ipcRenderer.invoke("operatingMode:getSnapshot", workspacePath),
+    setMode: (request: import("../shared/operatingMode.js").ModeChangeRequest) =>
+      ipcRenderer.invoke("operatingMode:setMode", request),
+    onModeChanged: (listener: (snapshot: import("../shared/operatingMode.js").OperatingModeSnapshot) => void) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        snapshot: import("../shared/operatingMode.js").OperatingModeSnapshot
+      ) => listener(snapshot);
+      ipcRenderer.on("operatingMode:snapshot", handler);
+      return () => ipcRenderer.removeListener("operatingMode:snapshot", handler);
     }
   },
   app: {

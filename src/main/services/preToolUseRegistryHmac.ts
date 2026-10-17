@@ -11,16 +11,21 @@ import type { WorkspaceMutationPolicyMode } from "../../shared/workspaceMutation
 import type { ActiveSessionAuthority } from "./blueprintApprovalAuthenticator.js";
 import type { MutationAuthorization } from "../../cli/preToolUseHookHelpers.js";
 
+import type { OperatingMode, TweakScope } from "../../shared/operatingMode.js";
+
 export interface WorkspaceRegistryEntry {
   readonly canonicalWorkspacePath: string;
   readonly sidecarStatePath: string;
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 1 | 2;
   readonly registeredAt: string;
-  readonly mutationPolicyMode?: WorkspaceMutationPolicyMode;
-  readonly modeHmac?: string;
-  readonly entryHmac?: string;
-  readonly activeSession?: ActiveSessionAuthority;
-  readonly sessionAuthorization?: MutationAuthorization;
+  readonly mutationPolicyMode?: WorkspaceMutationPolicyMode | undefined;
+  readonly operatingMode?: OperatingMode | undefined;
+  readonly authorizationRevision?: number | undefined;
+  readonly tweakScope?: TweakScope | undefined;
+  readonly modeHmac?: string | undefined;
+  readonly entryHmac?: string | undefined;
+  readonly activeSession?: ActiveSessionAuthority | undefined;
+  readonly sessionAuthorization?: MutationAuthorization | undefined;
 }
 
 export interface WorkspaceRegistryFile {
@@ -63,10 +68,36 @@ export function computeRegistryEntryHmac(
     readonly canonicalWorkspacePath: string;
     readonly sidecarStatePath: string;
     readonly schemaVersion: number;
-    readonly mutationPolicyMode?: WorkspaceMutationPolicyMode;
+    readonly mutationPolicyMode?: WorkspaceMutationPolicyMode | undefined;
+    readonly operatingMode?: OperatingMode | undefined;
+    readonly authorizationRevision?: number | undefined;
+    readonly tweakScope?: TweakScope | undefined;
   },
   signingKey: Buffer
 ): string {
+  if (entry.schemaVersion >= 2) {
+    const tweakScopePayload = entry.tweakScope
+      ? [
+          entry.tweakScope.transactionId,
+          [...entry.tweakScope.allowedRelativePaths].sort().join(","),
+          String(entry.tweakScope.maxFiles),
+          String(entry.tweakScope.maxLineBudget),
+          String(entry.tweakScope.expiresAtMs)
+        ].join("|")
+      : "none";
+
+    const payload = [
+      entry.canonicalWorkspacePath,
+      entry.sidecarStatePath,
+      entry.mutationPolicyMode ?? "strict",
+      entry.operatingMode ?? "loop",
+      String(entry.authorizationRevision ?? 0),
+      tweakScopePayload,
+      String(entry.schemaVersion)
+    ].join("::");
+    return crypto.createHmac("sha256", signingKey).update(payload).digest("hex");
+  }
+
   const payload = [
     entry.canonicalWorkspacePath,
     entry.sidecarStatePath,

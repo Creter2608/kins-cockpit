@@ -17,6 +17,7 @@ import {
 } from "./blueprintApprovalAuthenticator.js";
 import type { MutationAuthorization } from "../../cli/preToolUseHookHelpers.js";
 import type { WorkspaceMutationPolicyMode } from "../../shared/workspaceMutationPolicy.js";
+import type { OperatingMode, TweakScope } from "../../shared/operatingMode.js";
 import {
   STEALTH_TRANSPARENCY_TAG,
   type ActiveStealthRules,
@@ -77,6 +78,9 @@ export interface EquipPreToolUseHookOptions {
   readonly runtimeCommand?: string | undefined;
   readonly hooksConfigPath?: string | undefined;
   readonly mutationPolicyMode?: WorkspaceMutationPolicyMode | undefined;
+  readonly operatingMode?: OperatingMode | undefined;
+  readonly authorizationRevision?: number | undefined;
+  readonly tweakScope?: TweakScope | undefined;
   readonly activeSession?: ActiveSessionAuthority | undefined;
   readonly sessionAuthorization?: MutationAuthorization | undefined;
 }
@@ -302,12 +306,18 @@ export class PreToolUseHookService {
     const activeSession = options.activeSession ?? PreToolUseHookService.getActiveSession(canonicalWorkspace) ?? undefined;
     const sessionAuthorization = options.sessionAuthorization ?? undefined;
 
+    const hasOperatingMode = options.operatingMode !== undefined;
+    const schemaVersion = hasOperatingMode ? (2 as const) : (1 as const);
+
     const baseEntry = {
       canonicalWorkspacePath: canonicalWorkspace,
       sidecarStatePath,
-      schemaVersion: 1 as const,
+      schemaVersion,
       registeredAt: new Date().toISOString(),
       mutationPolicyMode: mode,
+      ...(hasOperatingMode ? { operatingMode: options.operatingMode } : {}),
+      ...(options.authorizationRevision !== undefined ? { authorizationRevision: options.authorizationRevision } : {}),
+      ...(options.tweakScope ? { tweakScope: options.tweakScope } : {}),
       ...(activeSession ? { activeSession } : {}),
       ...(sessionAuthorization ? { sessionAuthorization } : {})
     };
@@ -333,7 +343,7 @@ export class PreToolUseHookService {
     await fs.mkdir(path.dirname(hooksConfigPath), { recursive: true });
 
     // 3. Merge PreToolUse hook into hooks.json idempotently
-    let hooksData: Record<string, any> = {};
+    let hooksData: Record<string, unknown> = {};
     try {
       const existing = await fs.readFile(hooksConfigPath, "utf-8");
       hooksData = JSON.parse(existing);

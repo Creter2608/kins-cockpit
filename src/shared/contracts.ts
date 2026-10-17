@@ -447,6 +447,11 @@ export interface CockpitApi {
     readonly executeInTerminal?: (id: import("./systemReadiness.js").InstallablePrerequisiteId) => Promise<void>;
     readonly onSnapshot: (listener: (snapshot: import("./systemReadiness.js").SystemReadinessSnapshot) => void) => Unsubscribe;
   };
+  readonly operatingMode?: {
+    readonly getSnapshot: (workspacePath?: string) => Promise<import("./operatingMode.js").OperatingModeSnapshot>;
+    readonly setMode: (request: import("./operatingMode.js").ModeChangeRequest) => Promise<import("./operatingMode.js").OperatingModeSnapshot>;
+    readonly onModeChanged: (listener: (snapshot: import("./operatingMode.js").OperatingModeSnapshot) => void) => Unsubscribe;
+  };
   readonly app?: {
     readonly quit: () => Promise<void>;
   };

@@ -148,3 +148,174 @@ export function evaluateWorkspaceMutationPolicy(
     reason: "Mutation permitted: valid blueprint and active EXECUTE phase"
   };
 }
+
+import type {
+  OperatingMode,
+  TweakScope,
+  OperatingModeMutationResult
+} from "./operatingMode.js";
+import { TWEAK_CONSTRAINTS } from "./operatingMode.js";
+
+export interface OperatingModeMutationContext {
+  readonly mode: OperatingMode;
+  readonly authorizationRevision?: number | undefined;
+  readonly activeRevision?: number | undefined;
+  readonly tweakScope?: TweakScope | undefined;
+  readonly proposedLineCount?: number | undefined;
+}
+
+const TWEAK_PROTECTED_BASENAMES = new Set([
+  "package.json",
+  "package-lock.json",
+  "pnpm-lock.yaml",
+  "yarn.lock",
+  "tsconfig.json",
+  "tsconfig.node.json"
+]);
+
+export function isTweakProtectedPath(relPath: string): boolean {
+  const normalized = relPath.replace(/\\/g, "/").trim().toLowerCase();
+  const basename = path.posix.basename(normalized);
+
+  if (normalized.startsWith(".eval/") || normalized === ".eval") return true;
+  if (normalized.startsWith(".git/") || normalized === ".git") return true;
+  if (normalized.startsWith(".ai/") || normalized === ".ai") return true;
+  if (TWEAK_PROTECTED_BASENAMES.has(basename)) return true;
+
+  return false;
+}
+
+export function evaluateOperatingModeMutationPolicy(
+  context: OperatingModeMutationContext,
+  targetPaths: readonly string[],
+  workspaceRoot: string = process.cwd()
+): OperatingModeMutationResult {
+  const mode = context.mode;
+
+  if (!targetPaths || targetPaths.length === 0) {
+    return {
+      allowed: false,
+      mode,
+      reason: "Mutation denied: targetPaths must contain at least one path"
+    };
+  }
+
+  const normalizedRoot = path.resolve(workspaceRoot);
+  const evalDir = path.resolve(normalizedRoot, ".eval");
+  const resolvedPaths = targetPaths.map((p) => path.resolve(normalizedRoot, p));
+
+  // 1. Workspace containment
+  for (const resolved of resolvedPaths) {
+    const rel = path.relative(normalizedRoot, resolved);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) {
+      return {
+        allowed: false,
+        mode,
+        reason: `Mutation denied: target path '${resolved}' escapes workspace root`,
+        rejectionCode: "PROTECTED_PATH"
+      };
+    }
+  }
+
+  // 2. Invariant: .eval/ is strictly read-only in every mode
+  for (const resolved of resolvedPaths) {
+    if (resolved === evalDir || isPathInside(resolved, evalDir)) {
+      return {
+        allowed: false,
+        mode,
+        reason: `Mutation denied: path '${resolved}' is inside protected evaluation directory (.eval/)`,
+        rejectionCode: "PROTECTED_PATH"
+      };
+    }
+  }
+
+  // 3. Discussion mode: 100% read-only
+  if (mode === "discussion") {
+    return {
+      allowed: false,
+      mode: "discussion",
+      reason: "Chế độ Thảo luận (Discussion) là Read-only. Không được phép chỉnh sửa tập tin.",
+      rejectionCode: "DISCUSSION_READONLY"
+    };
+  }
+
+  // 4. Tweak mode: bounded mutation transaction
+  if (mode === "tweak") {
+    // Check line budget ceiling
+    const maxLineBudget = context.tweakScope?.maxLineBudget ?? TWEAK_CONSTRAINTS.MAX_LINE_BUDGET;
+    if (context.proposedLineCount !== undefined && context.proposedLineCount > maxLineBudget) {
+      return {
+        allowed: false,
+        mode: "tweak",
+        reason: `Chế độ Tinh chỉnh (Tweak) giới hạn tối đa ${maxLineBudget} dòng thay đổi (thay đổi đề xuất: ${context.proposedLineCount} dòng). Vui lòng dùng Loop.`,
+        rejectionCode: "TWEAK_BUDGET_EXCEEDED"
+      };
+    }
+
+    // Check file count ceiling
+    const maxFiles = context.tweakScope?.maxFiles ?? TWEAK_CONSTRAINTS.MAX_FILES;
+    if (targetPaths.length > maxFiles) {
+      return {
+        allowed: false,
+        mode: "tweak",
+        reason: `Chế độ Tinh chỉnh (Tweak) giới hạn tối đa ${maxFiles} tập tin (yêu cầu: ${targetPaths.length}). Vui lòng dùng Loop.`,
+        rejectionCode: "TWEAK_FILE_LIMIT_EXCEEDED"
+      };
+    }
+
+    // Check protected files for tweak
+    for (const resolved of resolvedPaths) {
+      const rel = path.relative(normalizedRoot, resolved);
+      if (isTweakProtectedPath(rel)) {
+        return {
+          allowed: false,
+          mode: "tweak",
+          reason: `Chế độ Tinh chỉnh (Tweak) không được phép sửa tập tin nhạy cảm: '${rel}'. Vui lòng dùng Loop.`,
+          rejectionCode: "PROTECTED_PATH"
+        };
+      }
+    }
+
+    // If a tweak scope is configured, enforce strict path whitelist & expiration
+    if (context.tweakScope) {
+      if (context.tweakScope.expiresAtMs && Date.now() > context.tweakScope.expiresAtMs) {
+        return {
+          allowed: false,
+          mode: "tweak",
+          reason: "Phiên giao dịch Tinh chỉnh (Tweak) đã hết hạn. Vui lòng phê duyệt lại.",
+          rejectionCode: "TRANSACTION_EXPIRED"
+        };
+      }
+
+      const allowedSet = new Set(
+        context.tweakScope.allowedRelativePaths.map((p) => p.replace(/\\/g, "/").toLowerCase())
+      );
+
+      for (const resolved of resolvedPaths) {
+        const rel = path.relative(normalizedRoot, resolved).replace(/\\/g, "/").toLowerCase();
+        if (!allowedSet.has(rel)) {
+          return {
+            allowed: false,
+            mode: "tweak",
+            reason: `Tập tin '${rel}' không nằm trong phạm vi được phê duyệt của phiên Tinh chỉnh.`,
+            rejectionCode: "TWEAK_PATH_UNAPPROVED"
+          };
+        }
+      }
+    }
+
+    return {
+      allowed: true,
+      mode: "tweak",
+      reason: "Tinh chỉnh (Tweak) được chấp thuận trong phạm vi được ủy quyền."
+    };
+  }
+
+  // 5. Loop mode: pass-through to loop policy
+  return {
+    allowed: true,
+    mode: "loop",
+    reason: "Chế độ Loop đang hoạt động: ủy quyền cho quy trình tự trị 10 pha."
+  };
+}
+

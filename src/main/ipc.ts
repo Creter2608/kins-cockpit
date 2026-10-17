@@ -16,6 +16,8 @@ import type { EccCatalogService } from "./services/EccCatalogService.js";
 import type { EccDispatcherService } from "./services/EccDispatcherService.js";
 import type { SystemReadinessService } from "./services/SystemReadinessService.js";
 import { executeReadinessInstallInTerminal } from "./services/ReadinessTerminalService.js";
+import { OperatingModeService } from "./services/OperatingModeService.js";
+import type { ModeChangeRequest, OperatingModeSnapshot } from "../shared/operatingMode.js";
 import { SUBAGENT_IPC_CHANNELS, ECC_IPC_CHANNELS, type ProjectState, type ContextItem, type ProviderCapacity, type EccDispatchRequest, type DeriveMessagesOptions } from "../shared/contracts.js";
 
 export interface ServiceContainer {
@@ -34,9 +36,12 @@ export interface ServiceContainer {
   eccCatalog?: EccCatalogService | undefined;
   eccDispatcher?: EccDispatcherService | undefined;
   systemReadiness?: SystemReadinessService | undefined;
+  operatingMode?: OperatingModeService | undefined;
 }
 
 export function registerIpcHandlers(window: BrowserWindow, services: ServiceContainer): () => void {
+  const operatingModeService = services.operatingMode ?? OperatingModeService.getInstance();
+
   const broadcastProjectSwitch = (projectState: ProjectState) => {
     if (!window.isDestroyed()) {
       window.webContents.send("project:changed", projectState);
@@ -45,6 +50,9 @@ export function registerIpcHandlers(window: BrowserWindow, services: ServiceCont
       window.webContents.send("logs:entries", services.logs.getSnapshot().entries);
       window.webContents.send("telemetry:snapshot", services.telemetry.getSnapshot());
       window.webContents.send("eval:snapshot", services.evalHarness.getSnapshot());
+      if (projectState.currentProject?.path) {
+        window.webContents.send("operatingMode:snapshot", operatingModeService.getSnapshot(projectState.currentProject.path));
+      }
       if (services.subagents) {
         window.webContents.send(SUBAGENT_IPC_CHANNELS.changed, services.subagents.list());
       }
@@ -370,19 +378,41 @@ export function registerIpcHandlers(window: BrowserWindow, services: ServiceCont
     unsubs.push(unsubReadiness);
   }
 
+  ipcMain.handle("operatingMode:getSnapshot", async (_event, workspacePath?: string) => {
+    const ws = workspacePath ?? services.project.getState().currentProject.path;
+    return operatingModeService.getSnapshot(ws);
+  });
+
+  ipcMain.handle("operatingMode:setMode", async (event, request: ModeChangeRequest) => {
+    if (!window || window.isDestroyed() || event.sender !== window.webContents) {
+      throw new Error("Unauthorized IPC invocation from untrusted sender");
+    }
+    return operatingModeService.setMode(request);
+  });
+
+  const onOperatingModeChanged = (snapshot: OperatingModeSnapshot) => {
+    if (!window.isDestroyed()) {
+      window.webContents.send("operatingMode:snapshot", snapshot);
+    }
+  };
+  operatingModeService.on("modeChanged", onOperatingModeChanged);
+
   ipcMain.handle("app:quit", async () => {
     const { app } = await import("electron");
     app.quit();
   });
 
   return () => {
+    operatingModeService.off("modeChanged", onOperatingModeChanged);
     services.project.setOnProjectSwitched?.(null);
     services.project.setOnWorkspaceContextChanged?.(null);
     for (const unsub of unsubs) {
       unsub();
     }
+    ipcMain.removeHandler("operatingMode:getSnapshot");
+    ipcMain.removeHandler("operatingMode:setMode");
     ipcMain.removeHandler("readiness:getSnapshot");
-        ipcMain.removeHandler("readiness:refresh");
+    ipcMain.removeHandler("readiness:refresh");
     ipcMain.removeHandler("readiness:executeInTerminal");
     ipcMain.removeHandler("app:quit");
     ipcMain.removeHandler(ECC_IPC_CHANNELS.GET_CATALOG);

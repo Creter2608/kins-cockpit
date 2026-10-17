@@ -16,6 +16,7 @@ import { SubagentSidebar } from "./components/SubagentSidebar.js";
 import { CriticalLogDrawer } from "./components/CriticalLogDrawer.js";
 import { TelemetryHud } from "./components/TelemetryHud.js";
 import { ProjectSelector } from "./components/ProjectSelector.js";
+import { OperatingModeControl } from "./components/OperatingModeControl.js";
 import { EvalScoreboard } from "./components/EvalScoreboard.js";
 import { RunActivityPanel } from "./components/RunActivityPanel.js";
 import { SystemReadinessModal } from "./components/SystemReadinessModal.js";
@@ -431,6 +432,7 @@ export const App: React.FC = () => {
             v{__APP_VERSION__}
           </span>
           <ProjectSelector />
+          <OperatingModeControl />
 
           {/* Navigation Tabs */}
           <nav className="flex items-center bg-zinc-900 border border-zinc-800 rounded-lg p-0.5 ml-2 gap-0.5" aria-label="Cockpit views">

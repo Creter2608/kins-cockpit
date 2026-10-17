@@ -1,7 +1,7 @@
 # Kin's Cockpit 🤖⚡
 
-[![Release: v3.0.2](https://img.shields.io/badge/Release-v3.0.2-emerald.svg)](https://github.com/Creter2608/kins-cockpit/releases/tag/v3.0.2)
-[![Tests: 624 passing](https://img.shields.io/badge/Tests-624%20passing-brightgreen.svg)](package.json)
+[![Release: v3.1.0](https://img.shields.io/badge/Release-v3.1.0-emerald.svg)](https://github.com/Creter2608/kins-cockpit/releases/tag/v3.1.0)
+[![Tests: 649 passing](https://img.shields.io/badge/Tests-649%20passing-brightgreen.svg)](package.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
 [![Electron](https://img.shields.io/badge/Electron-34-black.svg)](https://www.electronjs.org/)
@@ -15,7 +15,33 @@ Repository: **[https://github.com/Creter2608/kins-cockpit](https://github.com/Cr
 
 ---
 
-## 🚀 Latest Release: v3.0.2 (Portability & Zero-Dependency Autonomous Loop MCP Architecture)
+## 🚀 Latest Release: v3.1.0 (Tri-State Operating Switch & Interactive One-Click System Readiness)
+
+Version `3.1.0` introduces the landmark **Tri-State Operating Switch**, one-click interactive PowerShell automation for prerequisite tools, and exhaustive health audits verified across 649 tests by independent ECC (Everything Claude Code) expert reviewers:
+
+1. **Tri-State Operating Switch (`discussion` | `tweak` | `loop`)**:
+   - Eliminates token drain and unnecessary 10-phase loop overhead for minor code fixes while maintaining strict safety boundaries:
+   - 💬 **Thảo luận (`discussion`)**: 100% read-only conversation and codebase analysis. Workspace mutation tools (`write_to_file`, `replace_file_content`) are hard-denied at the cryptographic PreToolUse hook.
+   - ⚡ **Tinh chỉnh (`tweak`)**: Bounded mutation transaction ($0 GPT Oracle token cost) for quick fixes and targeted tweaks. Strictly enforced ceilings: ≤3 files, ≤120 lines delta budget. Full host-enforced invariants (`.eval/` protection, stealth rules, zinc color tokens) remain active.
+   - 🔁 **Loop (`loop`)**: Canonical Autonomous Loop v3.0 pipeline with Stage 2 Blueprint & Stage 4 Reality Check audits.
+   - Orchestrated via `OperatingModeService` with atomic monotonic revisions and Schema v2 HMAC cryptographic integrity (`preToolUseRegistryHmac.ts`).
+
+2. **Interactive System Readiness & One-Click PowerShell Tool Automation**:
+   - Built-in official installation commands for Windows: `irm https://antigravity.google/cli/install.ps1 | iex` for Antigravity (`agy`), and `irm https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.ps1 | iex` for CodeGraph.
+   - **"Run in PowerShell" Action Buttons**: Replaces manual copy-pasting; one click copies the command to clipboard and automatically launches an interactive PowerShell window executing the installation.
+   - Cockpit ConPTY terminal auto-launches `agy` with `--dangerously-skip-permissions` inside the cockpit while preserving interactive safety prompts in standalone terminal shells.
+
+3. **ECC Certified Multi-Agent Quality & Security Hardening**:
+   - Comprehensive audit pass from `ecc_code_reviewer`, `ecc_typescript_reviewer`, and `ecc_security_reviewer`.
+   - **649 passed tests / 0 failures / 1 skipped** (100% test pass rate across unit, integration, and adversarial suites).
+   - Invariant protection precedence: `.eval/` and stealth manifest rules run before mode evaluation, preventing any stealth rule or evaluation tampering.
+   - Deterministic Architecture Quality Index (**AQI: 4.37 / 5.0**) with Simplicity 5.0, Modularity 5.0, Maintainability 5.0, and 0 architectural cycles.
+
+---
+
+## 📦 Previous Releases
+
+### v3.0.2 (Portability & Zero-Dependency Autonomous Loop MCP Architecture)
 
 Version `3.0.2` delivers full multi-machine portability, zero-external-dependency bundled MCP architectures, and rigorous security hardening verified by independent ECC (Everything Claude Code) expert subagents:
 
