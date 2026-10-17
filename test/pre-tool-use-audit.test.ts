@@ -11,6 +11,8 @@ import { WorkspaceStealthRuleService } from "../src/main/services/workspaceSteal
 import { RuleBundleCompilerService } from "../src/main/services/ruleBundleCompilerService.js";
 import type { WorkspaceContext } from "../src/shared/contracts.js";
 
+process.env.KINS_COCKPIT_ACTIVE = "1";
+
 test("A-01: opaque tool without explicit paths uses active current workspace", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "kins-audit-cwd-"));
   const workspace = path.join(root, "workspace");

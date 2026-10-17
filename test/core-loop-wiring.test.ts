@@ -32,6 +32,8 @@ import {
   LoopCommandService
 } from "../src/loop/index.js";
 
+process.env.KINS_COCKPIT_ACTIVE = "1";
+
 function createMockState(overrides: Partial<LoopState> = {}): LoopState {
   return {
     schemaVersion: 2,

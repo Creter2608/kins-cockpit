@@ -18,6 +18,8 @@ import {
 import type { LoopStateStore } from "../src/loop/LoopStateStore.js";
 import type { LoopState } from "../src/engine.js";
 
+process.env.KINS_COCKPIT_ACTIVE = "1";
+
 test("Read-Gate rejects replayed exploration evidence from a previous run", async () => {
   const tmpDir = await fs.mkdtemp(
     path.join(os.tmpdir(), "read-gate-replay-")

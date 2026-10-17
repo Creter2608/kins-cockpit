@@ -18,6 +18,7 @@ import {
   evaluateWorkspaceMutationPolicy,
   type WorkspaceMutationPolicyMode
 } from "../shared/workspaceMutationPolicy.js";
+import { resolveWorkspaceStateFile } from "../shared/workspaceStatePaths.js";
 import {
   PreToolUseHookService,
   verifyRegistryEntryHmac,
@@ -59,7 +60,41 @@ export async function evaluatePreToolUseHook(
   input: PreToolUseHookInput | unknown,
   optionsOrEnv?: PreToolUseHookOptions | NodeJS.ProcessEnv
 ): Promise<PreToolUseHookDecision> {
-  // Fail-closed by default
+  // Determine paths and options
+  let customRegistryPath: string | undefined;
+  let customAuthKeyPath: string | undefined;
+  let customUserDataPath: string | undefined;
+  let env: NodeJS.ProcessEnv = process.env;
+
+  if (optionsOrEnv && typeof optionsOrEnv === "object") {
+    if (
+      "registryPath" in optionsOrEnv ||
+      "authKeyPath" in optionsOrEnv ||
+      "userDataPath" in optionsOrEnv ||
+      "env" in optionsOrEnv
+    ) {
+      const opts = optionsOrEnv as PreToolUseHookOptions;
+      customRegistryPath = opts.registryPath;
+      customAuthKeyPath = opts.authKeyPath;
+      customUserDataPath = opts.userDataPath;
+      if (opts.env) {
+        env = opts.env;
+      }
+    } else {
+      env = { ...process.env, ...(optionsOrEnv as NodeJS.ProcessEnv) };
+    }
+  }
+
+  // Session-Scoped Pass-Through: Base session activation strictly on KINS_COCKPIT_ACTIVE === "1".
+  // External sessions (VS Code, Cursor, independent terminals) without KINS_COCKPIT_ACTIVE="1" immediately pass through.
+  if (env.KINS_COCKPIT_ACTIVE !== "1") {
+    return {
+      decision: "allow",
+      reason: "Pass-through: session is outside Kin's Cockpit environment (KINS_COCKPIT_ACTIVE not set)."
+    };
+  }
+
+  // Fail-closed by default for Cockpit sessions
   if (!input || typeof input !== "object") {
     return { decision: "deny", reason: "Invalid hook input payload: expected JSON object" };
   }
@@ -106,31 +141,6 @@ export async function evaluatePreToolUseHook(
     (resolvedTarget || undefined) ||
     process.cwd();
   let activeStealth = PreToolUseHookService.findActiveStealthRulesForPath(candidateWorkspacePath);
-
-  // Determine paths and options
-  let customRegistryPath: string | undefined;
-  let customAuthKeyPath: string | undefined;
-  let customUserDataPath: string | undefined;
-  let env: NodeJS.ProcessEnv = process.env;
-
-  if (optionsOrEnv && typeof optionsOrEnv === "object") {
-    if (
-      "registryPath" in optionsOrEnv ||
-      "authKeyPath" in optionsOrEnv ||
-      "userDataPath" in optionsOrEnv ||
-      "env" in optionsOrEnv
-    ) {
-      const opts = optionsOrEnv as PreToolUseHookOptions;
-      customRegistryPath = opts.registryPath;
-      customAuthKeyPath = opts.authKeyPath;
-      customUserDataPath = opts.userDataPath;
-      if (opts.env) {
-        env = opts.env;
-      }
-    } else {
-      env = optionsOrEnv as NodeJS.ProcessEnv;
-    }
-  }
 
   const userDataPath = customUserDataPath ?? resolveDefaultUserDataPath(env);
   const registryPath = customRegistryPath ?? path.join(userDataPath, "hooks", "workspaces.json");
@@ -308,15 +318,32 @@ export async function evaluatePreToolUseHook(
     mode = rawMode;
   }
 
-  // Load sidecar state.json after verifying registry authentication
+  // Load state.json after verifying registry authentication
+  let stateFilePath: string;
+  try {
+    const resolution = resolveWorkspaceStateFile(
+      {
+        canonicalWorkspaceRoot: matchedWorkspace.canonicalWorkspacePath,
+        sidecarStateFile: matchedWorkspace.sidecarStatePath
+      },
+      "read"
+    );
+    stateFilePath = resolution.stateFile;
+  } catch (err) {
+    return {
+      decision: "deny",
+      reason: `Hook denied: state path resolution failed: ${err instanceof Error ? err.message : String(err)}`
+    };
+  }
+
   let state: LoopState;
   try {
-    const stateRaw = await fs.readFile(matchedWorkspace.sidecarStatePath, "utf-8");
+    const stateRaw = await fs.readFile(stateFilePath, "utf-8");
     state = JSON.parse(stateRaw);
   } catch (err) {
     return {
       decision: "deny",
-      reason: `Hook denied: failed to read sidecar state at '${matchedWorkspace.sidecarStatePath}': ${err instanceof Error ? err.message : String(err)}`
+      reason: `Hook denied: failed to read state at '${stateFilePath}': ${err instanceof Error ? err.message : String(err)}`
     };
   }
 

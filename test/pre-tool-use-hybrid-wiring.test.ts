@@ -31,6 +31,8 @@ import {
   EMPTY_RESOURCE_USAGE
 } from "../src/engine.js";
 
+process.env.KINS_COCKPIT_ACTIVE = "1";
+
 function createMockState(overrides: Partial<LoopState> = {}): LoopState {
   return {
     schemaVersion: 2,

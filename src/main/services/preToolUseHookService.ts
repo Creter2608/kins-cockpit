@@ -67,7 +67,7 @@ export function resolveDefaultRuntimeCommand(): string {
   }
 
   const normalizedHookPath = hookPath.replace(/\\/g, "/");
-  return normalizedHookPath.includes(" ") ? `node "${normalizedHookPath}"` : `node ${normalizedHookPath}`;
+  return `node "${normalizedHookPath}"`;
 }
 
 export interface EquipPreToolUseHookOptions {
@@ -323,15 +323,8 @@ export class PreToolUseHookService {
     await fs.writeFile(tmpRegistry, JSON.stringify(registry, null, 2), "utf-8");
     await fs.rename(tmpRegistry, registryPath);
 
-    // 2. Resolve hooks.json config path (isolated during test execution)
-    const isTestRuntime =
-      process.env.NODE_ENV === "test" ||
-      process.env.VITEST !== undefined ||
-      process.argv.some((arg) => arg.includes("test"));
-
-    const defaultHooksPath = isTestRuntime
-      ? path.join(options.userDataPath, "hooks.json")
-      : path.join(os.homedir(), ".gemini", "config", "hooks.json");
+    // 2. Resolve hooks.json config path (isolated under <userDataPath>/hooks/hooks.json)
+    const defaultHooksPath = path.join(options.userDataPath, "hooks", "hooks.json");
 
     const hooksConfigPath =
       options.hooksConfigPath ??
@@ -724,10 +717,11 @@ export class PreToolUseHookService {
     }
 
     // 2. Active stealth protected paths
-    if (rules && normTarget) {
+    if (rules && request.targetPath) {
+      const canonTarget = canonicalizePath(request.targetPath);
       for (const p of rules.protectedPaths) {
-        const normP = p.replace(/\\/g, "/");
-        if (normTarget === normP || normTarget.endsWith(normP) || normTarget.startsWith(normP)) {
+        const canonP = canonicalizePath(p);
+        if (canonTarget === canonP || canonTarget.startsWith(canonP.endsWith("/") ? canonP : `${canonP}/`) || canonTarget.endsWith(canonP)) {
           violations.push({
             code: "PROTECTED_PATH",
             message: `Target path "${request.targetPath}" is protected under active stealth rules.`,

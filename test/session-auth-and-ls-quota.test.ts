@@ -23,6 +23,8 @@ import type { MutationAuthorization } from "../src/cli/preToolUseHookHelpers.js"
 import { parseSha256Hex } from "../src/checksum.js";
 import type { LoopState } from "../src/engine.js";
 
+process.env.KINS_COCKPIT_ACTIVE = "1";
+
 function createMockLoopState(overrides: Partial<LoopState> = {}): LoopState {
   const dummyHash = parseSha256Hex("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
   return {

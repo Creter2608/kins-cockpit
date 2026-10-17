@@ -20,6 +20,7 @@ import {
   isSourceCodePath,
   estimateFileTokens
 } from "./preToolUseHookHelpers.js";
+import { resolveWorkspaceStateFile } from "../shared/workspaceStatePaths.js";
 
 export interface ReadGateContext {
   readonly userDataPath: string;
@@ -123,8 +124,25 @@ export async function evaluateReadGate(
 
   let authoritativeRunId: string | null = null;
   const sidecarDir = path.dirname(matchedWorkspace.sidecarStatePath);
+  let effectiveStatePath: string;
   try {
-    const stateRaw = await fs.readFile(matchedWorkspace.sidecarStatePath, "utf-8");
+    const res = resolveWorkspaceStateFile(
+      {
+        canonicalWorkspaceRoot: matchedWorkspace.canonicalWorkspacePath,
+        sidecarStateFile: matchedWorkspace.sidecarStatePath
+      },
+      "read"
+    );
+    effectiveStatePath = res.stateFile;
+  } catch (err) {
+    return {
+      decision: "deny",
+      reason: `Anti-Token-Drain Protocol: state path resolution failed: ${err instanceof Error ? err.message : String(err)}`
+    };
+  }
+
+  try {
+    const stateRaw = await fs.readFile(effectiveStatePath, "utf-8");
     const state = JSON.parse(stateRaw);
     if (typeof state.runId === "string" && state.runId.trim()) {
       authoritativeRunId = state.runId;

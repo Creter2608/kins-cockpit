@@ -38,7 +38,8 @@ export const ALLOWED_ENV_VARS = new Set([
   "KINS_HARNESS_DIR",
   "KINS_AQI_HARNESS",
   "KINS_LOOP_SCRIPT",
-  "KINS_COCKPIT_ACTIVE"
+  "KINS_COCKPIT_ACTIVE",
+  "ANTIGRAVITY_HOOKS_CONFIG_PATH"
 ]);
 
 export function buildSanitizedPtyEnv(
@@ -68,6 +69,16 @@ export function buildSanitizedPtyEnv(
     sanitized["KINS_WORKSPACE_ROOT"] = workspaceContext.root;
     sanitized["KINS_SIDECAR_DIR"] = workspaceContext.sidecarDirectory;
     sanitized["KINS_COCKPIT_ACTIVE"] = "1";
+
+    let userDataDir: string;
+    const sidecarNorm = workspaceContext.sidecarDirectory.replace(/\\/g, "/");
+    const workspacesIdx = sidecarNorm.lastIndexOf("/workspaces");
+    if (workspacesIdx > 0) {
+      userDataDir = workspaceContext.sidecarDirectory.slice(0, workspacesIdx);
+    } else {
+      userDataDir = path.resolve(workspaceContext.sidecarDirectory, "../..");
+    }
+    sanitized["ANTIGRAVITY_HOOKS_CONFIG_PATH"] = path.join(userDataDir, "hooks", "hooks.json");
 
     const harnessPaths = resolveHarnessResourcePaths(harnessOptions);
     sanitized["KINS_HARNESS_DIR"] = harnessPaths.scriptsDirectory;
@@ -148,7 +159,13 @@ export class PtyService {
     // Fallback if agy.exe is not found
     if (!fs.existsSync(fileToRun)) {
       if (os.platform() === "win32") {
-        fileToRun = "powershell.exe";
+        fileToRun = path.join(
+          process.env.SystemRoot || "C:\\Windows",
+          "System32",
+          "WindowsPowerShell",
+          "v1.0",
+          "powershell.exe"
+        );
         args = ["-NoLogo"];
       } else {
         fileToRun = process.env.SHELL || "/bin/sh";

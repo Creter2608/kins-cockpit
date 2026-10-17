@@ -25,6 +25,7 @@ import { DEFAULT_RESOURCE_BUDGET, EMPTY_RESOURCE_USAGE, type ArchitectureTaskTyp
 import { JsonFileLoopStateStore, LoopCommandService } from "../../loop/index.js";
 import { PreToolUseHookService } from "./preToolUseHookService.js";
 import { isLoopTransitionAllowed } from "./loopTransitionGuard.js";
+import { resolveWorkspaceStateFile } from "../../shared/workspaceStatePaths.js";
 
 export function parseLoopStateJson(content: string): Partial<LoopStateSnapshot> {
   const parsed = JSON.parse(content);
@@ -93,31 +94,27 @@ function parseTaskType(subject: string): string {
 
 export function resolveLoopStatePath(workspaceRoot: string, sidecarDirectory?: string): string {
   const resolvedPath = path.resolve(workspaceRoot);
-  const repoAiDir = path.join(resolvedPath, ".ai");
-  let hasRepoAi = false;
-  try {
-    hasRepoAi = fs.existsSync(repoAiDir) && fs.statSync(repoAiDir).isDirectory();
-  } catch {}
-
-  if (hasRepoAi) {
-    return path.join(repoAiDir, "state.json");
-  }
+  let candidateSidecarState: string;
   if (sidecarDirectory) {
-    return path.join(path.resolve(sidecarDirectory), "state", "state.json");
+    candidateSidecarState = path.join(path.resolve(sidecarDirectory), "state", "state.json");
+  } else {
+    // DEC-002: Foreign repository with no .ai/ and no explicit sidecarDirectory:
+    // Derive safe deterministic user sidecar path based on workspace root hash to avoid polluting external repo!
+    const safeId = crypto.createHash("sha256").update(resolvedPath).digest("hex").slice(0, 16);
+    const baseUserData = process.env.APPDATA || (process.platform === "darwin" ? path.join(os.homedir(), "Library", "Application Support") : path.join(os.homedir(), ".config"));
+    const cockpitState = path.join(baseUserData, "kins-cockpit", "workspaces", safeId, "sidecar", "state", "state.json");
+    const legacyState = path.join(baseUserData, "kins-multiagents-ui", "workspaces", safeId, "sidecar", "state", "state.json");
+    candidateSidecarState = fs.existsSync(cockpitState) ? cockpitState : (fs.existsSync(legacyState) ? legacyState : cockpitState);
   }
-  // DEC-002: Foreign repository with no .ai/ and no explicit sidecarDirectory:
-  // Derive safe deterministic user sidecar path based on workspace root hash to avoid polluting external repo!
-  const safeId = crypto.createHash("sha256").update(resolvedPath).digest("hex").slice(0, 16);
-  const baseUserData = process.env.APPDATA || (process.platform === "darwin" ? path.join(os.homedir(), "Library", "Application Support") : path.join(os.homedir(), ".config"));
-  const cockpitState = path.join(baseUserData, "kins-cockpit", "workspaces", safeId, "sidecar", "state", "state.json");
-  const legacyState = path.join(baseUserData, "kins-multiagents-ui", "workspaces", safeId, "sidecar", "state", "state.json");
-  if (fs.existsSync(cockpitState)) {
-    return cockpitState;
-  }
-  if (fs.existsSync(legacyState)) {
-    return legacyState;
-  }
-  return cockpitState;
+
+  const res = resolveWorkspaceStateFile(
+    {
+      canonicalWorkspaceRoot: resolvedPath,
+      sidecarStateFile: candidateSidecarState
+    },
+    "initialize"
+  );
+  return res.stateFile;
 }
 
 export interface RunResetTransitionInput {

@@ -1,6 +1,6 @@
 {
   "name": "kins-cockpit",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Desktop mission-control cockpit for autonomous AI pair programming",
   "productName": "Kin's Cockpit",
   "private": true,

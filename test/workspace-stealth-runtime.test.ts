@@ -14,6 +14,8 @@ import {
 } from "../src/shared/contracts.js";
 import { evaluatePreToolUseHook } from "../src/cli/preToolUseHook.js";
 
+process.env.KINS_COCKPIT_ACTIVE = "1";
+
 // Helper to create disposable Git worktree
 function createTestWorkspace(): { workspaceDir: string; sidecarDir: string; context: WorkspaceContext } {
   const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), "kins-stealth-ws-"));
