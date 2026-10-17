@@ -104,6 +104,12 @@ export function resolveDefaultUserDataPath(env: NodeJS.ProcessEnv = process.env)
   if (env.ANTIGRAVITY_HOOK_USER_DATA) {
     return env.ANTIGRAVITY_HOOK_USER_DATA;
   }
+  if (env.ANTIGRAVITY_HOOKS_CONFIG_PATH) {
+    const candidateUserData = path.dirname(path.dirname(env.ANTIGRAVITY_HOOKS_CONFIG_PATH));
+    if (candidateUserData && syncFs.existsSync(path.join(candidateUserData, "hooks", "workspaces.json"))) {
+      return candidateUserData;
+    }
+  }
   let cockpitPath: string | null = null;
   let legacyCockpitPath: string | null = null;
   if (process.platform === "win32" && env.APPDATA) {

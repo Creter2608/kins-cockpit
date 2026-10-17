@@ -20,7 +20,7 @@ import {
   evaluateOperatingModeMutationPolicy,
   isTweakProtectedPath
 } from "../src/shared/workspaceMutationPolicy.js";
-import type { TweakScope } from "../src/shared/operatingMode.js";
+import { OPERATING_MODE_LABELS, type TweakScope } from "../src/shared/operatingMode.js";
 import { PreToolUseHookService } from "../src/main/services/preToolUseHookService.js";
 import { evaluatePreToolUseHook } from "../src/cli/preToolUseHook.js";
 
@@ -387,4 +387,57 @@ test("PreToolUseHook: stealth manifest denies write even when in Tweak mode", as
     await fs.rm(tmpDir, { recursive: true, force: true });
     await fs.rm(tmpWs, { recursive: true, force: true });
   }
+});
+
+test("Tri-State Switch UI & English localization invariants", async () => {
+  // 1. English labels contract
+  assert.equal(OPERATING_MODE_LABELS.discussion, "Discussion");
+  assert.equal(OPERATING_MODE_LABELS.tweak, "Tweak");
+  assert.equal(OPERATING_MODE_LABELS.loop, "Loop");
+
+  // 2. Button cleanliness: OperatingModeControl must not contain emoji icons
+  const opControlContent = await fs.readFile(
+    path.join(process.cwd(), "src/renderer/components/OperatingModeControl.tsx"),
+    "utf-8"
+  );
+  assert.ok(!opControlContent.includes("💬"), "Must not include discussion emoji");
+  assert.ok(!opControlContent.includes("⚡"), "Must not include tweak emoji");
+  assert.ok(!opControlContent.includes("🔁"), "Must not include loop emoji");
+  assert.match(opControlContent, /tooltip:\s*"Discussion mode"/, "Must configure exact tooltip for discussion");
+  assert.match(opControlContent, /tooltip:\s*"Tweak mode"/, "Must configure exact tooltip for tweak");
+  assert.match(opControlContent, /tooltip:\s*"Loop mode"/, "Must configure exact tooltip for loop");
+
+  // 3. OperatingModeControl relocation: TerminalStage toolbar between ConPTY Active and Clear/Restart CLI
+  const terminalStageContent = await fs.readFile(
+    path.join(process.cwd(), "src/renderer/components/TerminalStage.tsx"),
+    "utf-8"
+  );
+  assert.ok(
+    terminalStageContent.includes("<OperatingModeControl />"),
+    "TerminalStage must render OperatingModeControl"
+  );
+  const conPtyPos = terminalStageContent.indexOf("ConPTY Active");
+  const switchPos = terminalStageContent.indexOf("<OperatingModeControl />");
+  const clearPos = terminalStageContent.indexOf("Clear terminal buffer");
+  assert.ok(conPtyPos !== -1, "ConPTY Active must exist in TerminalStage");
+  assert.ok(switchPos !== -1, "OperatingModeControl must exist in TerminalStage");
+  assert.ok(clearPos !== -1, "Clear button must exist in TerminalStage");
+  assert.ok(
+    conPtyPos < switchPos && switchPos < clearPos,
+    "OperatingModeControl must be positioned between ConPTY Active and Clear/Restart CLI"
+  );
+
+  // 4. App.tsx header cleanliness: OperatingModeControl removed from top bar
+  const appContent = await fs.readFile(
+    path.join(process.cwd(), "src/renderer/App.tsx"),
+    "utf-8"
+  );
+  assert.ok(
+    !appContent.includes("<OperatingModeControl"),
+    "App.tsx must not render OperatingModeControl"
+  );
+  assert.ok(
+    !appContent.includes("components/OperatingModeControl"),
+    "App.tsx must not import OperatingModeControl"
+  );
 });

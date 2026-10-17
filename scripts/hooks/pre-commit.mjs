@@ -11,13 +11,42 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { execSync } from "node:child_process";
 
 function fail(reason) {
   fs.writeSync(2, `\n[PRE-COMMIT HOOK REJECTED]: ${reason}\n\n`);
   process.exit(1);
 }
 
-const statePath = path.resolve(".ai/state.json");
+function resolveStateFile() {
+  if (process.env.KINS_SIDECAR_DIR) {
+    const sidecarState = path.join(process.env.KINS_SIDECAR_DIR, "state", "state.json");
+    if (fs.existsSync(sidecarState)) {
+      return sidecarState;
+    }
+  }
+
+  const cwdState = path.resolve(".ai", "state.json");
+  if (fs.existsSync(cwdState)) {
+    return cwdState;
+  }
+
+  try {
+    const repoRoot = execSync("git rev-parse --show-toplevel", { encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"] }).trim();
+    if (repoRoot) {
+      const rootState = path.join(repoRoot, ".ai", "state.json");
+      if (fs.existsSync(rootState)) {
+        return rootState;
+      }
+    }
+  } catch {
+    // Ignore git rev-parse failure
+  }
+
+  return cwdState;
+}
+
+const statePath = resolveStateFile();
 if (!fs.existsSync(statePath)) {
   fail(".ai/state.json not found. Run must be initialized before commit.");
 }

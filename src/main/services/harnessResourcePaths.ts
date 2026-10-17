@@ -39,15 +39,22 @@ export function resolveHarnessResourcePaths(options?: ResolveHarnessOptions): Ha
   let scriptsDirectory: string;
   const root = options?.appRoot ?? resolveDevAppRoot();
 
-  if (isPackaged && resourcesPath && fs.existsSync(path.join(resourcesPath, "scripts"))) {
+  if (isPackaged && resourcesPath && fs.existsSync(path.join(resourcesPath, "app.asar.unpacked", "scripts"))) {
+    scriptsDirectory = path.join(resourcesPath, "app.asar.unpacked", "scripts");
+  } else if (isPackaged && resourcesPath && fs.existsSync(path.join(resourcesPath, "scripts"))) {
     scriptsDirectory = path.join(resourcesPath, "scripts");
   } else {
     scriptsDirectory = path.join(root, "scripts");
   }
 
   let preToolUseHookPath: string;
-  if (isPackaged && resourcesPath && fs.existsSync(path.join(resourcesPath, "dist", "src", "cli", "preToolUseHook.js"))) {
-    preToolUseHookPath = path.join(resourcesPath, "dist", "src", "cli", "preToolUseHook.js");
+  const unpackedHookPath = resourcesPath ? path.join(resourcesPath, "app.asar.unpacked", "dist", "src", "cli", "preToolUseHook.js") : "";
+  const directResourcesHookPath = resourcesPath ? path.join(resourcesPath, "dist", "src", "cli", "preToolUseHook.js") : "";
+
+  if (isPackaged && resourcesPath && fs.existsSync(unpackedHookPath)) {
+    preToolUseHookPath = unpackedHookPath;
+  } else if (isPackaged && resourcesPath && fs.existsSync(directResourcesHookPath)) {
+    preToolUseHookPath = directResourcesHookPath;
   } else {
     preToolUseHookPath = path.join(root, "dist", "src", "cli", "preToolUseHook.js");
   }

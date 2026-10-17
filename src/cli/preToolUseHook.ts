@@ -573,6 +573,7 @@ export async function runPreToolUseHookCli(argv: string[] = process.argv.slice(2
 }
 
 // Auto-run if executed directly as CLI script
-if (process.argv[1] && (process.argv[1].endsWith("preToolUseHook.js") || process.argv[1].endsWith("preToolUseHook.ts"))) {
+const scriptArg = process.argv[1]?.replace(/^["']|["']$/g, "");
+if (scriptArg && (scriptArg.endsWith("preToolUseHook.js") || scriptArg.endsWith("preToolUseHook.ts"))) {
   runPreToolUseHookCli().catch(() => process.exit(1));
 }

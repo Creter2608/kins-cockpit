@@ -51,24 +51,27 @@ export {
   verifyExplorationEvidenceHmac
 };
 
-export function resolveDefaultRuntimeCommand(): string {
-  const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
-  const moduleRelativeHookPath = path.resolve(
-    moduleDirectory,
-    "../../cli/preToolUseHook.js"
-  );
-  const sourceTreeFallbackPath = path.resolve(
-    moduleDirectory,
-    "../../../dist/src/cli/preToolUseHook.js"
-  );
-  let hookPath = syncFs.existsSync(moduleRelativeHookPath) ? moduleRelativeHookPath : sourceTreeFallbackPath;
-  const unpackedPath = hookPath.replace(/app\.asar/g, 'app.asar.unpacked');
-  if (syncFs.existsSync(unpackedPath)) {
-    hookPath = unpackedPath;
+export function resolveDefaultRuntimeCommand(hookScriptPath?: string): string {
+  let hookPath = hookScriptPath;
+  if (!hookPath) {
+    const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
+    const moduleRelativeHookPath = path.resolve(
+      moduleDirectory,
+      "../../cli/preToolUseHook.js"
+    );
+    const sourceTreeFallbackPath = path.resolve(
+      moduleDirectory,
+      "../../../dist/src/cli/preToolUseHook.js"
+    );
+    hookPath = syncFs.existsSync(moduleRelativeHookPath) ? moduleRelativeHookPath : sourceTreeFallbackPath;
+    const unpackedPath = hookPath.replace(/app\.asar/g, 'app.asar.unpacked');
+    if (syncFs.existsSync(unpackedPath)) {
+      hookPath = unpackedPath;
+    }
   }
 
   const normalizedHookPath = hookPath.replace(/\\/g, "/");
-  return `node "${normalizedHookPath}"`;
+  return normalizedHookPath.includes(" ") ? `node "${normalizedHookPath}"` : `node ${normalizedHookPath}`;
 }
 
 export interface EquipPreToolUseHookOptions {
@@ -100,6 +103,12 @@ export interface ResolveCodeGraphReadGateInput {
 export function resolveDefaultUserDataPath(env: NodeJS.ProcessEnv = process.env): string {
   if (env.ANTIGRAVITY_HOOK_USER_DATA) {
     return env.ANTIGRAVITY_HOOK_USER_DATA;
+  }
+  if (env.ANTIGRAVITY_HOOKS_CONFIG_PATH) {
+    const candidateUserData = path.dirname(path.dirname(env.ANTIGRAVITY_HOOKS_CONFIG_PATH));
+    if (candidateUserData && syncFs.existsSync(path.join(candidateUserData, "hooks", "workspaces.json"))) {
+      return candidateUserData;
+    }
   }
   let cockpitPath: string | null = null;
   let legacyCockpitPath: string | null = null;
@@ -372,6 +381,37 @@ export class PreToolUseHookService {
     const tmpHooks = `${hooksConfigPath}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
     await fs.writeFile(tmpHooks, JSON.stringify(hooksData, null, 2), "utf-8");
     await fs.rename(tmpHooks, hooksConfigPath);
+
+    // 4. Auto-clean stale legacy hooks in global ~/.gemini/config/hooks.json with dead paths
+    try {
+      const globalHooksPath = path.join(os.homedir(), ".gemini", "config", "hooks.json");
+      if (syncFs.existsSync(globalHooksPath)) {
+        const rawGlobal = await fs.readFile(globalHooksPath, "utf-8");
+        const globalHooks = JSON.parse(rawGlobal);
+        let modified = false;
+        for (const key of [PreToolUseHookService.HOOK_IDENTIFIER, "kins-multiagents-ui"]) {
+          if (globalHooks[key]) {
+            const entry = globalHooks[key] as { PreToolUse?: Array<{ hooks?: Array<{ command?: string }> }> };
+            const cmd = entry?.PreToolUse?.[0]?.hooks?.[0]?.command;
+            if (typeof cmd === "string") {
+              const match = cmd.match(/node\s+["']?([^"']+)["']?/);
+              const scriptPath = match ? match[1] : "";
+              if (!scriptPath || !syncFs.existsSync(scriptPath)) {
+                delete globalHooks[key];
+                modified = true;
+              }
+            }
+          }
+        }
+        if (modified) {
+          const tmpGlobal = `${globalHooksPath}.${Date.now()}.tmp`;
+          await fs.writeFile(tmpGlobal, JSON.stringify(globalHooks, null, 2), "utf-8");
+          await fs.rename(tmpGlobal, globalHooksPath);
+        }
+      }
+    } catch {
+      // Non-fatal: ignore global hook cleanup failure
+    }
 
     return Object.freeze({
       hooksConfigPath,

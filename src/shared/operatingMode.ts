@@ -9,8 +9,8 @@
 export type OperatingMode = "discussion" | "tweak" | "loop";
 
 export const OPERATING_MODE_LABELS: Record<OperatingMode, string> = {
-  discussion: "Thảo luận",
-  tweak: "Tinh chỉnh",
+  discussion: "Discussion",
+  tweak: "Tweak",
   loop: "Loop"
 } as const;
 

@@ -39,7 +39,10 @@ export const ALLOWED_ENV_VARS = new Set([
   "KINS_AQI_HARNESS",
   "KINS_LOOP_SCRIPT",
   "KINS_COCKPIT_ACTIVE",
-  "ANTIGRAVITY_HOOKS_CONFIG_PATH"
+  "ANTIGRAVITY_HOOKS_CONFIG_PATH",
+  "ANTIGRAVITY_HOOK_USER_DATA",
+  "NVM_HOME",
+  "NVM_SYMLINK"
 ]);
 
 export function buildSanitizedPtyEnv(
@@ -48,6 +51,8 @@ export function buildSanitizedPtyEnv(
   harnessOptions?: ResolveHarnessOptions
 ): Record<string, string> {
   const sanitized: Record<string, string> = {};
+  let pathVal: string | undefined = undefined;
+
   for (const [key, value] of Object.entries(rawEnv)) {
     if (typeof value !== "string") continue;
     const upperKey = key.toUpperCase();
@@ -57,9 +62,19 @@ export function buildSanitizedPtyEnv(
     ) {
       continue;
     }
+    if (upperKey === "PATH") {
+      if (pathVal === undefined) {
+        pathVal = value;
+      }
+      continue;
+    }
     if (ALLOWED_ENV_VARS.has(upperKey)) {
       sanitized[key] = value;
     }
+  }
+
+  if (pathVal !== undefined) {
+    sanitized["PATH"] = pathVal;
   }
   sanitized["COLORTERM"] = "truecolor";
   sanitized["TERM"] = "xterm-256color";
@@ -84,6 +99,7 @@ export function buildSanitizedPtyEnv(
     sanitized["ANTIGRAVITY_HOOKS_CONFIG_PATH"] = isWindowsPath
       ? path.win32.join(userDataDir, "hooks", "hooks.json")
       : path.join(userDataDir, "hooks", "hooks.json");
+    sanitized["ANTIGRAVITY_HOOK_USER_DATA"] = userDataDir;
 
     const harnessPaths = resolveHarnessResourcePaths(harnessOptions);
     sanitized["KINS_HARNESS_DIR"] = harnessPaths.scriptsDirectory;

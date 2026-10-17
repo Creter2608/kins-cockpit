@@ -172,9 +172,19 @@ test("preToolUseHookService: default hooksConfigPath is scoped to userData", asy
 });
 
 // Golden Assertion 7: {"in":"Runtime command path with spaces","out":"Quoted command string"}
-test("resolveDefaultRuntimeCommand: always quotes hook script path", () => {
-  const cmd = resolveDefaultRuntimeCommand();
-  assert.match(cmd, /^node "[^"]+"/);
+test("resolveDefaultRuntimeCommand: quotes hook script path only when containing spaces (PITFALL-024)", () => {
+  const quotedCmd = resolveDefaultRuntimeCommand("C:/Program Files/Kins Cockpit/hook.js");
+  assert.equal(quotedCmd, 'node "C:/Program Files/Kins Cockpit/hook.js"');
+
+  const unquotedCmd = resolveDefaultRuntimeCommand("C:/tools/hook.js");
+  assert.equal(unquotedCmd, "node C:/tools/hook.js");
+
+  const defaultCmd = resolveDefaultRuntimeCommand();
+  if (defaultCmd.replace(/^node /, "").includes(" ")) {
+    assert.match(defaultCmd, /^node "[^"]+"/);
+  } else {
+    assert.match(defaultCmd, /^node \S+/);
+  }
 });
 
 // Golden Assertion 8: {"in":"PtyService environment","out":"Contains ANTIGRAVITY_HOOKS_CONFIG_PATH"}
@@ -190,4 +200,5 @@ test("buildSanitizedPtyEnv: propagates ANTIGRAVITY_HOOKS_CONFIG_PATH in workspac
 
   assert.equal(env["KINS_COCKPIT_ACTIVE"], "1");
   assert.equal(env["ANTIGRAVITY_HOOKS_CONFIG_PATH"], "C:\\Users\\Test\\AppData\\Roaming\\kins-cockpit\\hooks\\hooks.json");
+  assert.equal(env["ANTIGRAVITY_HOOK_USER_DATA"], "C:\\Users\\Test\\AppData\\Roaming\\kins-cockpit");
 });

@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { Terminal as TerminalIcon, RotateCw, Trash2 } from "lucide-react";
+import { OperatingModeControl } from "./OperatingModeControl.js";
 
 export const TerminalStage: React.FC = () => {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -204,6 +205,8 @@ export const TerminalStage: React.FC = () => {
             ConPTY Active
           </span>
         </div>
+
+        <OperatingModeControl />
 
         <div className="flex items-center space-x-2">
           <button

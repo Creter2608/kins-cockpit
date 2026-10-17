@@ -33,9 +33,24 @@ let teardownIpc: (() => void) | null = null;
 
 // Determine absolute project repository root
 const isPackaged = app.isPackaged;
-const projectRoot = isPackaged
+const appInstallRoot = isPackaged
   ? path.dirname(app.getPath("exe"))
   : path.resolve(__dirname, "../../..");
+
+// Writable safe landing workspace under userData when no recent project is selected
+const defaultWorkspaceRoot = isPackaged
+  ? path.join(app.getPath("userData"), "workspace")
+  : path.resolve(__dirname, "../../..");
+
+if (isPackaged && !fs.existsSync(defaultWorkspaceRoot)) {
+  try {
+    fs.mkdirSync(defaultWorkspaceRoot, { recursive: true });
+  } catch (err) {
+    throw new Error(`Failed to initialize default cockpit workspace at ${defaultWorkspaceRoot}`, { cause: err });
+  }
+}
+
+const projectRoot = defaultWorkspaceRoot;
 
 // Instantiate backend services with deterministic absolute paths
 const ptyService = new PtyService(projectRoot);
@@ -45,8 +60,8 @@ const logService = new CriticalLogService();
 const telemetryService = new TelemetryService();
 const dockerService = new DockerStatusService();
 const systemReadinessService = new SystemReadinessService(dockerService);
-const rollbackService = new RollbackService(projectRoot, projectRoot);
-const evalService = new EvalHarnessService(projectRoot, projectRoot);
+const rollbackService = new RollbackService(projectRoot, appInstallRoot);
+const evalService = new EvalHarnessService(projectRoot, appInstallRoot);
 const subagentService = new SubagentService();
 const preToolUseHookService = new PreToolUseHookService();
 const worktreeService = new WorktreeAttributionService();

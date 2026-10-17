@@ -1,7 +1,7 @@
 # Kin's Cockpit 🤖⚡
 
-[![Release: v3.1.1](https://img.shields.io/badge/Release-v3.1.1-emerald.svg)](https://github.com/Creter2608/kins-cockpit/releases/tag/v3.1.1)
-[![Tests: 649 passing](https://img.shields.io/badge/Tests-649%20passing-brightgreen.svg)](package.json)
+[![Release: v3.2.0](https://img.shields.io/badge/Release-v3.2.0-emerald.svg)](https://github.com/Creter2608/kins-cockpit/releases/tag/v3.2.0)
+[![Tests: 655 passing](https://img.shields.io/badge/Tests-655%20passing-brightgreen.svg)](package.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
 [![Electron](https://img.shields.io/badge/Electron-34-black.svg)](https://www.electronjs.org/)
@@ -15,7 +15,35 @@ Repository: **[https://github.com/Creter2608/kins-cockpit](https://github.com/Cr
 
 ---
 
-## 🚀 Latest Release: v3.1.1 (Zero-Config Cross-Platform MCP Provisioning & Concurrency Hardening)
+## 🚀 Latest Release: v3.2.0 (Physical Execution Closure, Windows NVM Preservation & Clean Landing Isolation)
+
+Version `3.2.0` achieves complete multi-machine execution closure, robust Windows NVM environment propagation, and safe landing workspace decoupling, resolving real-world packaged distribution barriers identified through deep ECC and GPT Architect multi-agent auditing:
+
+1. **Physical Execution Closure for External Node (`build.asarUnpack` & `harnessResourcePaths.ts`)**:
+   - Resolves ASAR module-resolution trapping where standalone Node.js child processes spawned outside Electron (`ai-loop.mjs`, `runner.mjs`, `preToolUseHook.js`) failed to resolve internal ESM dependencies from within Electron's virtual `app.asar` archive.
+   - Configures `electron-builder` unpacking for `dist/**/*`, `scripts/**/*`, `package.json`, and `node_modules/**/*` into `resources/app.asar.unpacked/`.
+   - Updated `resolveHarnessResourcePaths` to deterministically prefer unpacked scripts and fallback cleanly to application roots.
+   - Verified via `scripts/verify-release-layout.mjs` smoke-testing external Node importability and physical artifact existence.
+
+2. **Windows NVM & Shell Environment Preservation (`PtyService.ts`)**:
+   - Preserves `NVM_HOME` and `NVM_SYMLINK` environment variables across ConPTY sessions, resolving `node: command not found` on Windows machines relying on NVM for Windows.
+   - Case-insensitively consolidates fragmented `Path` / `PATH` environment keys into a single canonical `PATH` with symlink expansion (`%NVM_SYMLINK%`).
+   - Strictly isolates runtime environment by excluding `NODE_PATH` (audit remediation F-02) to prevent module confusion between host and packaged contexts.
+
+3. **Decoupled Landing Directory & Workspace Isolation (`src/main/index.ts`)**:
+   - Decoupled application installation root (`appInstallRoot` in `AppData\Local\Programs\kins-cockpit`) from active project workspace (`defaultWorkspaceRoot` in `%APPDATA%\kins-cockpit\workspace`).
+   - Automatically initializes an isolated Git repository workspace upon first launch with descriptive error bubbling, preventing `EPERM` read-only crashes in protected Windows system directories.
+
+4. **Idempotent Container Readiness & Dual-Oracle Audit Certification (`scripts/setup-sandbox.ps1`)**:
+   - Added `scripts/setup-sandbox.ps1` for one-click, idempotent Docker daemon verification, container start, or creation of `kins_autonomous_sandbox`.
+   - Full adversarial test suite (`test/release-layout-and-env.test.ts`) guaranteeing configuration integrity across unpack manifests, environment whitelists, and script resolution.
+   - Stage 4 Adversarial Audit (`audit_and_break_code_with_gpt`) passed with 100% compliance across 655 passing tests.
+
+---
+
+## 📦 Previous Releases
+
+### v3.1.1 (Zero-Config Cross-Platform MCP Provisioning & Concurrency Hardening)
 
 Version `3.1.1` introduces full zero-config automated setup and cross-platform provisioning for bundled Model Context Protocol (MCP) servers (`gpt_architect`, `kins-agent-loop`, and `codegraph`), completely eliminating manual environment configuration on freshly cloned machines:
 
