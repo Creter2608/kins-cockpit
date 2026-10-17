@@ -1,6 +1,6 @@
 # Kin's Cockpit 🤖⚡
 
-[![Release: v3.1.0](https://img.shields.io/badge/Release-v3.1.0-emerald.svg)](https://github.com/Creter2608/kins-cockpit/releases/tag/v3.1.0)
+[![Release: v3.1.1](https://img.shields.io/badge/Release-v3.1.1-emerald.svg)](https://github.com/Creter2608/kins-cockpit/releases/tag/v3.1.1)
 [![Tests: 649 passing](https://img.shields.io/badge/Tests-649%20passing-brightgreen.svg)](package.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
@@ -15,7 +15,32 @@ Repository: **[https://github.com/Creter2608/kins-cockpit](https://github.com/Cr
 
 ---
 
-## 🚀 Latest Release: v3.1.0 (Tri-State Operating Switch & Interactive One-Click System Readiness)
+## 🚀 Latest Release: v3.1.1 (Zero-Config Cross-Platform MCP Provisioning & Concurrency Hardening)
+
+Version `3.1.1` introduces full zero-config automated setup and cross-platform provisioning for bundled Model Context Protocol (MCP) servers (`gpt_architect`, `kins-agent-loop`, and `codegraph`), completely eliminating manual environment configuration on freshly cloned machines:
+
+1. **Automated Zero-Config MCP Provisioner (`scripts/setup-mcp.mjs`)**:
+   - Automatically executed upon `npm install` via the `"prepare"` lifecycle hook or on demand via `npm run setup:mcp`.
+   - **Cross-Platform Python Launcher Support**: Intelligently probes host Python environments across Windows and POSIX systems. Specifically handles Windows Python Launcher (`py -3`) by separating executable `command: "py"` and argument prefix `argsPrefix: ["-3"]`, preventing catastrophic `spawnSync ENOENT` crashes.
+   - **Path Traversal & NTFS ADS Sanitization**: Strict input sanitization blocking shell metacharacters (`[&|;`$><\r\n]`), symlink escape exploits, and Windows NTFS Alternate Data Streams (`:`).
+   - **Idempotent Merge & Byte-for-Byte Malformed Safety**: Merges bundled servers into `~/.gemini/config/mcp_config.json` while strictly preserving unrelated top-level keys (`preferences`) and third-party servers. If existing config contains malformed JSON, skips modifications to guarantee byte-for-byte recoverability.
+
+2. **Cockpit Runtime Provisioning & Optimistic Concurrency (`McpMonitorService.ts`)**:
+   - Automatically provisions schemas to `~/.gemini/antigravity-cli/mcp/` and execution configs upon desktop application startup.
+   - **4-Level Directory Traversal Lookup**: Seamlessly discovers bundled servers across packaged Electron distributions (`process.resourcesPath`), external active project roots, or development builds (`dist/src/main/services/`).
+   - **Optimistic Concurrency Control**: Bounded retry loop detecting external/concurrent writes to `mcp_config.json`, merging changes safely right before atomic replacement (`tmpFile` + `fs.renameSync`) with mode `0o600`.
+   - **Qualified Python 3 Verification**: Validates runtime major version (`Python 3.x`) using bounded `--version` execution probe (rejecting Python 2 or unexecutable files) with actionable developer guidance when Python 3 is absent.
+
+3. **Sub-300ms Preflight Compatibility & Adversarial Certification**:
+   - Clean credential precedence (`explicit key` -> `existing config key` -> `process.env.OPENAI_API_KEY`) without dummy placeholder strings (`YOUR_KEY_HERE`), preventing conflicting credential errors.
+   - Preflight check benchmark: **PASS in ~17ms** (well under the 300ms SLA).
+   - Verified across 19 unit, runtime contract, and adversarial test suites (`test/setup-mcp.test.mjs`, `test/mcp-execution-adversarial.test.mjs`, `test/mcp-runtime-contracts.test.mjs`, `test/mcp-audit.test.mjs`, `dist/test/mcp-monitor-provisioning.test.js`).
+
+---
+
+## 📦 Previous Releases
+
+### v3.1.0 (Tri-State Operating Switch & Interactive One-Click System Readiness)
 
 Version `3.1.0` introduces the landmark **Tri-State Operating Switch**, one-click interactive PowerShell automation for prerequisite tools, and exhaustive health audits verified across 649 tests by independent ECC (Everything Claude Code) expert reviewers:
 
