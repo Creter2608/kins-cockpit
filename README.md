@@ -1,7 +1,7 @@
 # Kin's Cockpit 🤖⚡
 
-[![Release: v3.0.0](https://img.shields.io/badge/Release-v3.0.0-emerald.svg)](package.json)
-[![Tests: 597 passing](https://img.shields.io/badge/Tests-597%20passing-brightgreen.svg)](package.json)
+[![Release: v3.0.1](https://img.shields.io/badge/Release-v3.0.1-emerald.svg)](https://github.com/Creter2608/kins-cockpit/releases/tag/v3.0.1)
+[![Tests: 622 passing](https://img.shields.io/badge/Tests-622%20passing-brightgreen.svg)](package.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
 [![Electron](https://img.shields.io/badge/Electron-34-black.svg)](https://www.electronjs.org/)
@@ -15,7 +15,29 @@ Repository: **[https://github.com/Creter2608/kins-cockpit](https://github.com/Cr
 
 ---
 
-## 🚀 Welcome to v3.0.0 (First Official Production Release)
+## 🚀 Latest Release: v3.0.1 (Session-Scoped Hook Isolation & Multi-Machine Path Resolution)
+
+Version `3.0.1` delivers essential stability and isolation hardening to ensure effortless onboarding on fresh machines without interfering with developer environments:
+
+1. **100% Session-Scoped Hook Isolation (`KINS_COCKPIT_ACTIVE`)**:
+   - Hooks now execute in fail-open pass-through mode with 0ms overhead whenever running outside Kin's Cockpit (`KINS_COCKPIT_ACTIVE !== '1'`).
+   - Zero interference, zero CPU overhead, and zero blocking when running tests or commands in external tools (VS Code, Cursor, Windsurf, or external PowerShell).
+   - Relocates runtime hook configuration from global `~/.gemini/config/hooks.json` to isolated `%APPDATA%\kins-cockpit\hooks\hooks.json` to prevent global machine configuration pollution.
+
+2. **Zero-Config Multi-Machine Onboarding**:
+   - Automatically initializes session-scoped hook configurations upon fresh installation via `Kin's Cockpit Setup 3.0.1.exe`.
+   - Resolves deeply nested sidecar path calculations (`lastIndexOf('/workspaces')`), preventing path resolution failures across varied Windows and POSIX directory structures.
+   - Robust quoting and escaping for paths containing spaces and apostrophes (e.g. `C:\Users\...\Kin's Cockpit`).
+
+3. **Application Security & Resiliency Hardening (AppSec & Reality Certified)**:
+   - **SEC-02 (CWE-426)**: Fixed binary hijacking vulnerability on Windows by resolving absolute system paths in `System32\WindowsPowerShell\v1.0\powershell.exe`.
+   - **SEC-05 (CWE-22)**: Added path canonicalization (`canonicalizePath`) for stealth rule comparisons to defeat path traversal attempts.
+   - **Conflict Resolution**: Safely handles empty `.ai/` directories without triggering false positive `STATE_PATH_CONFLICT` errors; canonicalizes JSON keys before equality checks.
+   - **Cross-Platform CI Compatibility**: Native `path.win32` resolution for Windows-style paths when tested in Linux CI environments and automatic pre-commit hook bootstrapping.
+
+---
+
+## 🌟 Architecture Highlights (v3.0 Production Core)
 
 Version `3.0.0` represents the first official production release of Kin's Cockpit. This milestone transforms the experimental multi-agent harness into a hardened desktop application ready for daily engineering workflows:
 
@@ -271,7 +293,7 @@ npm install
 
 All verification commands execute locally on CPU at **$0 LLM token spend**. For autonomous agent workflows and container containment, verification suites must run strictly inside the isolated Docker sandbox `kins_autonomous_sandbox`:
 
-- **Run Full Deterministic Test Suite (597 tests passing 100%)**:
+- **Run Full Deterministic Test Suite (622 tests passing 100%)**:
   ```bash
   # Inside container sandbox (required for autonomous loop agents):
   docker exec kins_autonomous_sandbox npm test
@@ -302,6 +324,8 @@ All verification commands execute locally on CPU at **$0 LLM token spend**. For 
 
 | Symptom | Root Cause | Solution |
 | :--- | :--- | :--- |
+| **PreToolUse Hook: External Tools Intercepted** | Hook previously configured globally across developer environment. | Resolved in v3.0.1 via strict session-scoped gating (`KINS_COCKPIT_ACTIVE=1`) and user-data isolated configs (`%APPDATA%\kins-cockpit\hooks\hooks.json`). External IDEs/terminals pass through untouched with 0ms overhead. |
+| **Path Resolution Error in Loop / Hook** | Deeply nested sidecar layout or space/apostrophe in username or path. | Resolved in v3.0.1 via robust sidecar ancestor path resolution and cross-platform path canonicalization (`path.win32` on Windows). |
 | **System Readiness: CodeGraph Missing** | `codegraph` executable not found in system PATH. | Install CodeGraph or ensure it is accessible in system PATH. |
 | **PreToolUse Hook: `Cannot find module`** | Unpacked hook missing service dependencies. | Resolved in v3.0.0 via expanded `asarUnpack` configuration covering `dist/src/main/services/**/*` and `dist/src/shared/**/*`. |
 | **PreToolUse Hook: `Mutation authorization denied (EXPIRED)`** | Mutation session lease expired (fail-closed security invariant). | Renew mutation lease via authorized harness handshake; one-shot planning oracle is strictly invoked only once per task and cannot be looped. |
