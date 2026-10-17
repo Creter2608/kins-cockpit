@@ -1,7 +1,7 @@
 # Kin's Cockpit 🤖⚡
 
-[![Release: v3.0.1](https://img.shields.io/badge/Release-v3.0.1-emerald.svg)](https://github.com/Creter2608/kins-cockpit/releases/tag/v3.0.1)
-[![Tests: 622 passing](https://img.shields.io/badge/Tests-622%20passing-brightgreen.svg)](package.json)
+[![Release: v3.0.2](https://img.shields.io/badge/Release-v3.0.2-emerald.svg)](https://github.com/Creter2608/kins-cockpit/releases/tag/v3.0.2)
+[![Tests: 624 passing](https://img.shields.io/badge/Tests-624%20passing-brightgreen.svg)](package.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
 [![Electron](https://img.shields.io/badge/Electron-34-black.svg)](https://www.electronjs.org/)
@@ -15,7 +15,34 @@ Repository: **[https://github.com/Creter2608/kins-cockpit](https://github.com/Cr
 
 ---
 
-## 🚀 Latest Release: v3.0.1 (Session-Scoped Hook Isolation & Multi-Machine Path Resolution)
+## 🚀 Latest Release: v3.0.2 (Portability & Zero-Dependency Autonomous Loop MCP Architecture)
+
+Version `3.0.2` delivers full multi-machine portability, zero-external-dependency bundled MCP architectures, and rigorous security hardening verified by independent ECC (Everything Claude Code) expert subagents:
+
+1. **Bundled Zero-Dependency GPT Architect MCP Server**:
+   - Packaged a portable, standalone Python 3 MCP server (`resources/bundled/mcp-servers/gpt_architect/server.py`) requiring **zero external package installations** (relies strictly on standard library `urllib` and `subprocess`).
+   - Automatically harvests candidate git diffs (`git diff -U3`) and modified files, computes real-time token metrics and micro-USD financial accounting, and persists Stage 2 blueprints and Stage 4 reality check audits.
+   - 100% test coverage verified with native unit tests (`test/gpt-architect-server.test.py`).
+
+2. **Automatic Global MCP Schema Provisioning**:
+   - `McpMonitorService` automatically provisions bundled schemas (`codegraph`, `gpt_architect`, `kins-agent-loop`) from `resources/bundled/mcp-schemas/` into global Antigravity tool directories (`~/.gemini/antigravity-cli/mcp/` and `~/.gemini/antigravity/mcp/`) upon startup.
+   - Eliminates "MCP server not registered" failures when cloning or running setups on non-author machines.
+   - Features atomic file staging (`.tmp` -> schema validation -> rename) with automated Windows Defender/indexer lock fallback (`copyFileSync` + `unlinkSync`).
+
+3. **Strict 10-Phase Canonical Loop Observability**:
+   - Injected mandatory `PHASE_OBSERVABILITY_START` directives across `AGENTS.md` and `ruleBundleCompilerService.ts`.
+   - AI agent runtimes are strictly instructed to emit canonical `[Phase: <PHASE_ID>]` status tags on every turn, ensuring 100% deterministic tracking from `INITIALIZE` through `RELEASE_GATE` on any machine.
+
+4. **AppSec & Symlink Traversal Hardening (ECC Audit Certified)**:
+   - **SEC-01 (CWE-59)**: Defeated symlink traversal vulnerabilities in git context harvesting by enforcing `is_symlink()` checks and resolving target boundaries strictly within repository root.
+   - **SEC-02 (CWE-22)**: Enforced strict basename sanitization and path traversal guards against schema directory naming.
+   - **Silent Failure Elimination**: Standardized JSON-RPC error codes (`-32603 Internal error` preserving `request.id` vs `-32700 Parse error`), captured descriptive Git `stderr` diagnostics, and hardened state file resolution against AppData directory hijacking.
+
+---
+
+## 📦 Previous Releases
+
+### v3.0.1 (Session-Scoped Hook Isolation & Multi-Machine Path Resolution)
 
 Version `3.0.1` delivers essential stability and isolation hardening to ensure effortless onboarding on fresh machines without interfering with developer environments:
 

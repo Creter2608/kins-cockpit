@@ -9,5 +9,9 @@ Thumbs.db
 .env.*
 *.pem
 *.key
+__pycache__/
+*.pyc
 release/
-resources/bundled/
+resources/bundled/*
+!resources/bundled/mcp-schemas/
+!resources/bundled/mcp-servers/

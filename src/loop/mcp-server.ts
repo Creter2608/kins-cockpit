@@ -180,20 +180,36 @@ export function startMcpStdioServer(
     const trimmed = line.trim();
     if (!trimmed) return;
 
+    let request: JsonRpcRequest;
     try {
-      const request = JSON.parse(trimmed) as JsonRpcRequest;
-      const response = await handleJsonRpcMessage(request, commandService);
-      if (response !== null) {
-        process.stdout.write(JSON.stringify(response) + "\n");
-      }
-    } catch (err: unknown) {
+      request = JSON.parse(trimmed) as JsonRpcRequest;
+    } catch (parseErr) {
       process.stdout.write(
         JSON.stringify({
           jsonrpc: "2.0",
           id: null,
           error: {
             code: -32700,
-            message: `Parse error: ${err instanceof Error ? err.message : String(err)}`
+            message: `Parse error: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`
+          }
+        }) + "\n"
+      );
+      return;
+    }
+
+    try {
+      const response = await handleJsonRpcMessage(request, commandService);
+      if (response !== null) {
+        process.stdout.write(JSON.stringify(response) + "\n");
+      }
+    } catch (execErr: unknown) {
+      process.stdout.write(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: request.id ?? null,
+          error: {
+            code: -32603,
+            message: `Internal error: ${execErr instanceof Error ? execErr.message : String(execErr)}`
           }
         }) + "\n"
       );
@@ -211,3 +227,9 @@ export function isMainModule(metaUrl: string): boolean {
     return false;
   }
 }
+
+if (isMainModule(import.meta.url)) {
+  const stateArg = process.argv[2] ? path.resolve(process.argv[2]) : undefined;
+  startMcpStdioServer(stateArg);
+}
+

@@ -1,0 +1,13 @@
+{
+  "name": "agent_loop_status",
+  "description": "Query current state snapshot of the Canonical Autonomous Loop v3.0",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "runId": {
+        "type": "string",
+        "description": "Optional expected run ID to validate against active run"
+      }
+    }
+  }
+}

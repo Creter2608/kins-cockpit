@@ -1,0 +1,44 @@
+{
+  "name": "agent_loop_transition",
+  "description": "Transition canonical loop phase with optimistic concurrency control and gate invariants",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "runId": {
+        "type": "string",
+        "description": "Deterministic run identifier of the active loop"
+      },
+      "expectedPhase": {
+        "type": "string",
+        "description": "Expected current phase before transition (anti-race condition)"
+      },
+      "expectedRevision": {
+        "type": "number",
+        "description": "Expected monotonic revision number to prevent stale concurrent transitions"
+      },
+      "action": {
+        "type": "string",
+        "enum": [
+          "advance",
+          "approve",
+          "reject"
+        ],
+        "description": "Transition action: 'advance' for canonical flow, 'approve'/'reject' for gates"
+      },
+      "targetPhase": {
+        "type": "string",
+        "description": "Optional explicit target phase (must be legal transition)"
+      },
+      "reason": {
+        "type": "string",
+        "description": "Required reason when action is 'reject'"
+      }
+    },
+    "required": [
+      "runId",
+      "expectedPhase",
+      "expectedRevision",
+      "action"
+    ]
+  }
+}

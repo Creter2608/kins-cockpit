@@ -6,7 +6,9 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import * as process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -99,7 +101,8 @@ function resolveTargetProjectRoot(projectRootArg, stateFileArg) {
       }).trim();
       if (gitRoot) return path.resolve(gitRoot);
     } catch {
-      return stateDir;
+      // Avoid falling back to AppData or sidecar storage as project root
+      return process.cwd();
     }
   }
   return process.cwd();
@@ -107,7 +110,48 @@ function resolveTargetProjectRoot(projectRootArg, stateFileArg) {
 
 function resolveStateFile(rawPath, targetProjectRoot) {
   const root = targetProjectRoot || process.cwd();
-  const resolved = path.resolve(root, rawPath || '.ai/state.json');
+  let candidatePath = null;
+
+  if (rawPath) {
+    candidatePath = path.resolve(root, rawPath);
+  } else {
+    const legacyPath = path.resolve(root, '.ai/state.json');
+    if (fs.existsSync(legacyPath)) {
+      candidatePath = legacyPath;
+    } else {
+      try {
+        const baseUserData = process.env.APPDATA || (process.platform === 'darwin' ? path.join(os.homedir(), 'Library', 'Application Support') : path.join(os.homedir(), '.config'));
+        const resolvedRoot = path.resolve(root);
+        const canonicalRoot = process.platform === 'win32'
+          ? resolvedRoot.toLowerCase().replace(/\\/g, '/')
+          : resolvedRoot;
+        
+        const candidateIds = [
+          crypto.createHash('sha256').update(resolvedRoot).digest('hex').slice(0, 16),
+          crypto.createHash('sha256').update(canonicalRoot).digest('hex').slice(0, 16)
+        ];
+
+        for (const safeId of candidateIds) {
+          const cockpitState = path.join(baseUserData, 'kins-cockpit', 'workspaces', safeId, 'sidecar', 'state', 'state.json');
+          const legacyState = path.join(baseUserData, 'kins-multiagents-ui', 'workspaces', safeId, 'sidecar', 'state', 'state.json');
+          if (fs.existsSync(cockpitState)) {
+            candidatePath = cockpitState;
+            break;
+          } else if (fs.existsSync(legacyState)) {
+            candidatePath = legacyState;
+            break;
+          }
+        }
+      } catch {
+        // Fallback to legacy path below
+      }
+      if (!candidatePath) {
+        candidatePath = legacyPath;
+      }
+    }
+  }
+
+  const resolved = path.resolve(candidatePath);
   const targetEvalDir = path.resolve(root, '.eval');
   const appEvalDir = path.resolve(APP_ROOT, '.eval');
   if (resolved === targetEvalDir || resolved.startsWith(targetEvalDir + path.sep) ||

@@ -87,6 +87,16 @@ When executing engineering workflows, Layer 1 MUST automatically route tasks to 
 `📋 [Template Applied]: Loaded <template-name.md> for <workflow-stage>`
 <!-- SUPERPOWERS_TEMPLATES_END -->
 
+<!-- PHASE_OBSERVABILITY_START -->
+## Phase Observability & HUD Status Tagging
+
+To maintain real-time telemetry synchronization with the Cockpit HUD and deterministic transcript parsers:
+At the very beginning of every turn or response, the Agent MUST output the canonical phase status tag:
+`[Phase: <PHASE_ID>]`
+where `<PHASE_ID>` is strictly one of the 10 canonical phases:
+`INITIALIZE` | `SPEC_GATE` | `ISOLATE` | `DETECT_STACKS` | `PLAN` | `EXECUTE` | `VERIFY` | `REALITY_CHECK` | `RELEASE_GATE` | `COMPLETE`
+<!-- PHASE_OBSERVABILITY_END -->
+
 <!-- KARPATHY_GUIDELINES_START -->
 ## Karpathy Behavioral Invariants & Anti-Pitfall Principles
 

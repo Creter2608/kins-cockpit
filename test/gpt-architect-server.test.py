@@ -5,8 +5,12 @@ import os
 import subprocess
 from pathlib import Path
 
-# Point to server.py
-sys.path.insert(0, r"C:\Users\Kin\.gemini\mcp_servers\gpt_architect")
+# Point to bundled server.py first, with fallback to legacy path
+bundled_path = Path(__file__).resolve().parent.parent / "resources" / "bundled" / "mcp-servers" / "gpt_architect"
+if bundled_path.is_dir():
+    sys.path.insert(0, str(bundled_path))
+else:
+    sys.path.insert(0, r"C:\Users\Kin\.gemini\mcp_servers\gpt_architect")
 import server
 
 class TestGptArchitectServer(unittest.TestCase):

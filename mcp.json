@@ -4,6 +4,16 @@
       "command": "docker",
       "args": ["exec", "-i", "kins_autonomous_sandbox", "node", "dist/src/index.js"],
       "env": {}
+    },
+    "gpt_architect": {
+      "command": "python",
+      "args": ["resources/bundled/mcp-servers/gpt_architect/server.py"],
+      "env": {}
+    },
+    "kins-agent-loop": {
+      "command": "node",
+      "args": ["dist/src/loop/mcp-server.js"],
+      "env": {}
     }
   }
 }
