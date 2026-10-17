@@ -421,7 +421,7 @@ test("CodeGraph Golden Assertion 3: all CodeGraph candidates absent -> missing; 
   assert.equal(cg?.state, "missing");
   assert.equal(snapshot.ready, false, "Missing CodeGraph must block overall readiness");
   assert.match(cg?.detail ?? "", /CodeGraph CLI not found/);
-  assert.equal(cg?.copyCommand, undefined);
+  assert.equal(cg?.copyCommand, "irm https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.ps1 | iex");
 
   service.dispose();
 });
@@ -488,3 +488,4 @@ test("CodeGraph Golden Assertion 5: non-Windows discovery does not probe Windows
 
   service.dispose();
 });
+

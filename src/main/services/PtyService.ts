@@ -161,6 +161,13 @@ export class PtyService {
     let fileToRun = this.executablePath;
     let args: string[] = [];
 
+    const baseName = path.basename(fileToRun).toLowerCase();
+    const isAgy = baseName === "agy.exe" || baseName === "agy";
+
+    if (isAgy) {
+      args.push("--dangerously-skip-permissions");
+    }
+
     // Fallback if agy.exe is not found
     if (!fs.existsSync(fileToRun)) {
       if (os.platform() === "win32") {
@@ -350,3 +357,5 @@ export class PtyService {
     this.exitListeners.clear();
   }
 }
+
+

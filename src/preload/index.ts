@@ -144,6 +144,8 @@ const cockpitApi: CockpitApi = {
   readiness: {
     getSnapshot: () => ipcRenderer.invoke("readiness:getSnapshot"),
     refresh: () => ipcRenderer.invoke("readiness:refresh"),
+    executeInTerminal: (id: import("../shared/systemReadiness.js").InstallablePrerequisiteId) =>
+      ipcRenderer.invoke("readiness:executeInTerminal", id),
     onSnapshot: (listener: (snapshot: import("../shared/systemReadiness.js").SystemReadinessSnapshot) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, snapshot: import("../shared/systemReadiness.js").SystemReadinessSnapshot) => listener(snapshot);
       ipcRenderer.on("readiness:snapshot", handler);
@@ -156,3 +158,4 @@ const cockpitApi: CockpitApi = {
 };
 
 contextBridge.exposeInMainWorld("cockpitApi", cockpitApi);
+

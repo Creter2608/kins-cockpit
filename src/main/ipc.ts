@@ -15,6 +15,7 @@ import type { ProviderCapacityService } from "./services/ProviderCapacityService
 import type { EccCatalogService } from "./services/EccCatalogService.js";
 import type { EccDispatcherService } from "./services/EccDispatcherService.js";
 import type { SystemReadinessService } from "./services/SystemReadinessService.js";
+import { executeReadinessInstallInTerminal } from "./services/ReadinessTerminalService.js";
 import { SUBAGENT_IPC_CHANNELS, ECC_IPC_CHANNELS, type ProjectState, type ContextItem, type ProviderCapacity, type EccDispatchRequest, type DeriveMessagesOptions } from "../shared/contracts.js";
 
 export interface ServiceContainer {
@@ -351,6 +352,16 @@ export function registerIpcHandlers(window: BrowserWindow, services: ServiceCont
     ipcMain.handle("readiness:refresh", async () => {
       return services.systemReadiness!.refresh();
     });
+    ipcMain.handle("readiness:executeInTerminal", async (event, id: unknown) => {
+      if (!window || window.isDestroyed() || event.sender !== window.webContents) {
+        throw new Error("Unauthorized IPC invocation from untrusted sender");
+      }
+      if (id !== "antigravity" && id !== "codegraph") {
+        throw new Error("Invalid prerequisite ID for terminal installation: " + String(id));
+      }
+      await executeReadinessInstallInTerminal(id);
+      return { success: true };
+    });
     const unsubReadiness = services.systemReadiness.subscribe((snap) => {
       if (!window.isDestroyed()) {
         window.webContents.send("readiness:snapshot", snap);
@@ -371,7 +382,8 @@ export function registerIpcHandlers(window: BrowserWindow, services: ServiceCont
       unsub();
     }
     ipcMain.removeHandler("readiness:getSnapshot");
-    ipcMain.removeHandler("readiness:refresh");
+        ipcMain.removeHandler("readiness:refresh");
+    ipcMain.removeHandler("readiness:executeInTerminal");
     ipcMain.removeHandler("app:quit");
     ipcMain.removeHandler(ECC_IPC_CHANNELS.GET_CATALOG);
     ipcMain.removeHandler(ECC_IPC_CHANNELS.REFRESH_CATALOG);
@@ -412,3 +424,6 @@ export function registerIpcHandlers(window: BrowserWindow, services: ServiceCont
     ipcMain.removeHandler("harness:recoverPendingTools");
   };
 }
+
+
+

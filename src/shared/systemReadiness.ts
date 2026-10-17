@@ -11,6 +11,11 @@ export type PrerequisiteId =
   | "openai"
   | "codegraph";
 
+export type InstallablePrerequisiteId = Extract<
+  PrerequisiteId,
+  "antigravity" | "codegraph"
+>;
+
 export type ReadinessState =
   | "ready"
   | "missing"
@@ -21,10 +26,10 @@ export type ReadinessState =
 export interface PrerequisiteReadiness {
   readonly id: PrerequisiteId;
   readonly state: ReadinessState;
-  readonly version?: string;
+  readonly version?: string | undefined;
   readonly detail: string;
-  readonly copyCommand?: string;
-  readonly maskedPreview?: string;
+  readonly copyCommand?: string | undefined;
+  readonly maskedPreview?: string | undefined;
 }
 
 export interface SystemReadinessSnapshot {
@@ -39,4 +44,5 @@ export interface SystemReadinessApi {
     listener: (snapshot: SystemReadinessSnapshot) => void
   ): () => void;
   exitApp(): Promise<void>;
+  executeInTerminal(id: InstallablePrerequisiteId): Promise<void>;
 }

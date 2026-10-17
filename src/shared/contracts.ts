@@ -444,6 +444,7 @@ export interface CockpitApi {
   readonly readiness?: {
     readonly getSnapshot: () => Promise<import("./systemReadiness.js").SystemReadinessSnapshot>;
     readonly refresh: () => Promise<import("./systemReadiness.js").SystemReadinessSnapshot>;
+    readonly executeInTerminal?: (id: import("./systemReadiness.js").InstallablePrerequisiteId) => Promise<void>;
     readonly onSnapshot: (listener: (snapshot: import("./systemReadiness.js").SystemReadinessSnapshot) => void) => Unsubscribe;
   };
   readonly app?: {
@@ -517,4 +518,5 @@ export const SUBAGENT_IPC_CHANNELS = {
 
 export * from "./stealthRules.js";
 export * from "./harnessContracts.js";
+
 

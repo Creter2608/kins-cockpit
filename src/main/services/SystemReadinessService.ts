@@ -19,6 +19,7 @@ import type { DockerStatusService } from "./DockerStatusService.js";
 import type { DockerSandboxStatus } from "../../shared/contracts.js";
 import type { PrerequisiteReadiness, SystemReadinessSnapshot } from "../../shared/systemReadiness.js";
 import { maskCredential, extractOpenAiKeyFromMcpJson } from "./credentialMasker.js";
+import { getPrerequisiteInstallCommand } from "./ReadinessTerminalService.js";
 
 const defaultExecFileAsync = promisify(execFile);
 
@@ -329,7 +330,8 @@ export class SystemReadinessService {
       id: "antigravity",
       state: "missing",
       detail:
-        "Antigravity CLI (agy) not found in PATH or standard install locations (%LOCALAPPDATA%\\agy\\bin). Install agy binary and add to PATH."
+        "Antigravity CLI (agy) not found in PATH or standard install locations (%LOCALAPPDATA%\\agy\\bin). Install agy binary and add to PATH.",
+      copyCommand: getPrerequisiteInstallCommand("antigravity", this.platform)
     };
   }
 
@@ -445,7 +447,8 @@ export class SystemReadinessService {
       return {
         id: "codegraph",
         state: "unavailable",
-        detail: "CodeGraph execution failed or returned invalid version output. Reinstall from GitHub releases or check permissions."
+        detail: "CodeGraph execution failed or returned invalid version output. Reinstall from GitHub releases or check permissions.",
+        copyCommand: getPrerequisiteInstallCommand("codegraph", this.platform)
       };
     }
 
@@ -453,7 +456,8 @@ export class SystemReadinessService {
       id: "codegraph",
       state: "missing",
       detail:
-        "CodeGraph CLI not found in PATH or %LOCALAPPDATA%\\codegraph\\current\\bin. Download from GitHub releases or clone repository."
+        "CodeGraph CLI not found in PATH or %LOCALAPPDATA%\\codegraph\\current\\bin. Download from GitHub releases or clone repository.",
+      copyCommand: getPrerequisiteInstallCommand("codegraph", this.platform)
     };
   }
 
@@ -490,3 +494,4 @@ export class SystemReadinessService {
     this.listeners.clear();
   }
 }
+
