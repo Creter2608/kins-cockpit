@@ -13,15 +13,18 @@ export function isLoopTransitionAllowed(
   evidence?: string,
   targetPhase?: LoopPhase
 ): boolean {
-  // Gate 1: When advancing to EXECUTE as the target phase, require blueprint approval
+  // Gate 1: When advancing from PLAN to EXECUTE, require blueprint approval
+  // Terminal targets (RELEASE_GATE, COMPLETE) are strictly blocked without approval
   if (currentPhase === "PLAN" && nextPhase === "EXECUTE") {
-    if (targetPhase === "EXECUTE") {
-      const hasApproval = Boolean(
-        freshState.blueprintApproval?.blueprintSha256 &&
-        (!freshState.blueprintApproval.runId || freshState.blueprintApproval.runId === freshState.runId)
-      );
-      const hasCodeEvidence = typeof evidence === "string" && /\b(tool: write_to_file|tool: replace_file_content)\b/i.test(evidence);
-      if (!hasApproval && !hasCodeEvidence) {
+    const hasApproval = Boolean(
+      freshState.blueprintApproval?.blueprintSha256 &&
+      (!freshState.blueprintApproval.runId || freshState.blueprintApproval.runId === freshState.runId)
+    );
+    if (!hasApproval) {
+      const isExplicitSignoff = typeof evidence === "string" && /\b(audit passed|signed off|done)\b/i.test(evidence);
+      const isTerminalTarget = targetPhase === "RELEASE_GATE" || targetPhase === "COMPLETE";
+      const hasCodeEvidence = typeof evidence === "string" && /\b(tool: write_to_file|tool: replace_file_content|cmd: npm test|code written|verification done|tests passed)\b/i.test(evidence);
+      if ((isTerminalTarget && !isExplicitSignoff) || (!isTerminalTarget && !hasCodeEvidence)) {
         return false;
       }
     }
@@ -34,7 +37,7 @@ export function isLoopTransitionAllowed(
     (nextPhase === "RELEASE_GATE" || nextPhase === "COMPLETE")
   ) {
     const hasClosedAudit = Boolean(freshState.audit && freshState.audit.status === "closed");
-    const hasExplicitSignoff = typeof evidence === "string" && /\b(audit passed|signed off)\b/i.test(evidence);
+    const hasExplicitSignoff = typeof evidence === "string" && /\b(audit passed|signed off|done)\b/i.test(evidence);
     if (!hasClosedAudit && !hasExplicitSignoff) {
       return false;
     }

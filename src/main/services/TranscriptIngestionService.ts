@@ -804,12 +804,37 @@ export class TranscriptIngestionService {
       const current = this.loopService.getSnapshot();
       const currentIdx = LOOP_PHASES.indexOf(current.currentPhase as LoopPhase);
       const targetIdx = LOOP_PHASES.indexOf(detection.phase);
-      // Invariant: Transcript evidence is forward-only.
-      // Casual inspections (list_dir, view_file, codegraph) during EXECUTE or VERIFY
-      // must NOT attempt to rewind the active workflow.
-      if (targetIdx > currentIdx || detection.phase === "INITIALIZE") {
-        this.loopService.advanceToPhase(detection.phase, detection.evidence);
-        if (this.harnessService) {
+
+      const isTerminalState =
+        current.status === "succeeded" ||
+        current.status === "failed" ||
+        current.status === "blocked" ||
+        current.currentPhase === "COMPLETE";
+
+      const isEarlyPhaseStart =
+        detection.phase === "INITIALIZE" ||
+        detection.phase === "SPEC_GATE";
+
+      if (isTerminalState && isEarlyPhaseStart) {
+        // Authoritative new task boundary detected after a terminal run
+        this.loopService.resetLoop();
+        let advanced = true;
+        if (detection.phase !== "INITIALIZE") {
+          advanced = this.loopService.advanceToPhase(detection.phase, detection.evidence);
+        }
+        if (advanced && this.harnessService) {
+          void this.harnessService.recordEvent({
+            source: "loop",
+            kind: "phase_transition",
+            data: {
+              targetPhase: detection.phase,
+              ...(detection.evidence ? { evidence: detection.evidence } : {})
+            }
+          });
+        }
+      } else if (targetIdx > currentIdx || detection.phase === "INITIALIZE") {
+        const advanced = this.loopService.advanceToPhase(detection.phase, detection.evidence);
+        if (advanced && this.harnessService) {
           void this.harnessService.recordEvent({
             source: "loop",
             kind: "phase_transition",

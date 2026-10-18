@@ -1280,12 +1280,12 @@ test("transcript ingestion: detects completion keywords as COMPLETE phase", () =
     step_index: 12,
     source: "MODEL",
     type: "PLANNER_RESPONSE",
-    content: "Tính năng đã được hiện thực hoàn chỉnh và đã hoàn thành vượt qua toàn bộ các bài kiểm thử tự động."
+    content: "[Phase: COMPLETE]\nTính năng đã được hiện thực hoàn chỉnh và đã hoàn thành vượt qua toàn bộ các bài kiểm thử tự động."
   };
   const detection = detectPhaseWithEvidenceFromTranscriptStep(step);
   assert.ok(detection);
   assert.equal(detection?.phase, "COMPLETE");
-  assert.equal(detection?.evidence, "completion reported");
+  assert.equal(detection?.evidence, "tag: [Phase: COMPLETE]");
 });
 
 test("transcript ingestion: passing test results auto-advance loop to REALITY_CHECK", () => {

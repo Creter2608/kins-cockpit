@@ -1,7 +1,7 @@
 # Kin's Cockpit 🤖⚡
 
-[![Release: v3.2.0](https://img.shields.io/badge/Release-v3.2.0-emerald.svg)](https://github.com/Creter2608/kins-cockpit/releases/tag/v3.2.0)
-[![Tests: 655 passing](https://img.shields.io/badge/Tests-655%20passing-brightgreen.svg)](package.json)
+[![Release: v3.2.1](https://img.shields.io/badge/Release-v3.2.1-emerald.svg)](https://github.com/Creter2608/kins-cockpit/releases/tag/v3.2.1)
+[![Tests: 662 passing](https://img.shields.io/badge/Tests-662%20passing-brightgreen.svg)](package.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
 [![Electron](https://img.shields.io/badge/Electron-34-black.svg)](https://www.electronjs.org/)
@@ -15,7 +15,38 @@ Repository: **[https://github.com/Creter2608/kins-cockpit](https://github.com/Cr
 
 ---
 
-## 🚀 Latest Release: v3.2.0 (Physical Execution Closure, Windows NVM Preservation & Clean Landing Isolation)
+## 🚀 Latest Release: v3.2.1 (Autonomous Loop State Synchronization, Transition Guard Hardening & Stale State Elimination)
+
+Version `3.2.1` hardens the 10-phase Autonomous Loop lifecycle, telemetry state synchronization, and reactive UI tracking, eliminating cross-run state leaks, premature completions, and transition bypass vulnerabilities identified through deep ECC agency and GPT Adversarial auditing:
+
+1. **Hardened Transition Gates & Bypass Elimination (`loopTransitionGuard.ts`)**:
+   - **Strict Gate 1 Blueprint Enforcement**: Enforces authoritative `blueprintApproval` (`blueprintSha256`) when transitioning from `PLAN` to `EXECUTE`, strictly blocking write-tool / code-evidence bypasses.
+   - **Gate 2 Completion Defense**: Transitions to `RELEASE_GATE` or `COMPLETE` strictly require closed adversarial audits or explicit signoff. Evidence keywords are restricted solely to intermediate verification stages (`EXECUTE`, `VERIFY`).
+
+2. **Cross-Run State Isolation & Idempotent Transitions (`LoopStateService.ts`)**:
+   - **Stale State Isolation**: `readState()` isolates run boundaries (`runId` mismatch), preventing fallback/leakage of `audit`, `blueprintApproval`, or `architecturalCompliance` snapshots from previous runs.
+   - **Idempotency Guarantee**: `advanceToPhase()` short-circuits safely when target matches current phase, preventing spurious reset cycles during replay.
+
+3. **Terminal Reset Hygiene & Double-Reset Elimination (`TranscriptIngestionService.ts`)**:
+   - **Terminal State Whitelist**: Expanded `isTerminalState` to include `blocked` alongside `succeeded` and `failed`.
+   - **Restricted Auto-Restart Boundary**: Restricted `isEarlyPhaseStart` strictly to `INITIALIZE` and `SPEC_GATE` (excluding `PLAN`), preventing erratic resets from transcript echoes.
+   - **Double-Reset & Phantom Event Removal**: Deduplicated reset invocations and ensured telemetry events are emitted only upon verified phase transitions.
+
+4. **Transcript Parser Hierarchy & Golden Assertion Preservation (`transcriptParsers.ts`)**:
+   - Enforces strict 3-Tier priority: Tier 1 Canonical Tags -> Tier 2 Tool Invocations -> Tier 3 Template Markers.
+   - Preserves Golden Assertion 2 (`all tests passed` auto-advances to `REALITY_CHECK`).
+   - Locks `COMPLETE` phase recognition strictly to explicit canonical tag `[Phase: COMPLETE]`, eliminating false-positive premature completions from natural language.
+
+5. **React 19 PhaseTracker Remount & Triple-Lock Display (`PhaseTracker.tsx` & `App.tsx`)**:
+   - Bound `<PhaseTracker key={loopState.runId} ...>` ensuring clean unmount, timer cancellation, and state re-initialization across loop boundaries.
+   - Triple-lock verification for terminal completion (`item.phase === "COMPLETE" && loopState.status === "succeeded" && displayPhase === "COMPLETE"`).
+   - AST Adversarial Contract (`test/phase-contract-audit.test.mjs`) and E2E synchronization suite passing 100%.
+
+---
+
+## 📦 Previous Releases
+
+### v3.2.0 (Physical Execution Closure, Windows NVM Preservation & Clean Landing Isolation)
 
 Version `3.2.0` achieves complete multi-machine execution closure, robust Windows NVM environment propagation, and safe landing workspace decoupling, resolving real-world packaged distribution barriers identified through deep ECC and GPT Architect multi-agent auditing:
 
@@ -38,10 +69,6 @@ Version `3.2.0` achieves complete multi-machine execution closure, robust Window
    - Added `scripts/setup-sandbox.ps1` for one-click, idempotent Docker daemon verification, container start, or creation of `kins_autonomous_sandbox`.
    - Full adversarial test suite (`test/release-layout-and-env.test.ts`) guaranteeing configuration integrity across unpack manifests, environment whitelists, and script resolution.
    - Stage 4 Adversarial Audit (`audit_and_break_code_with_gpt`) passed with 100% compliance across 655 passing tests.
-
----
-
-## 📦 Previous Releases
 
 ### v3.1.1 (Zero-Config Cross-Platform MCP Provisioning & Concurrency Hardening)
 

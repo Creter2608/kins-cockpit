@@ -512,6 +512,7 @@ export const App: React.FC = () => {
       <div className="flex-1 flex overflow-hidden">
         {/* Left: Autonomous Loop Tracker */}
         <PhaseTracker
+          key={loopState.runId}
           loopState={loopState}
           telemetry={telemetry}
           onRollback={handleRollback}

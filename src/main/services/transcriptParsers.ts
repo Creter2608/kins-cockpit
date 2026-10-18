@@ -100,9 +100,64 @@ export function detectPhaseWithEvidenceFromTranscriptStep(step: unknown): PhaseD
     return null;
   }
 
+  // 1. Subagent events, system messages, or notification envelopes must NEVER drive main loop phase transitions
+  const isSystemOrSubagentMsg =
+    s.type === "SYSTEM_MESSAGE" ||
+    s.source === "SYSTEM" ||
+    s.source === "SUBAGENT" ||
+    s.is_subagent === true ||
+    s.isSubagent === true ||
+    s.subagent === true ||
+    (typeof s.content === "string" && s.content.includes("<SYSTEM_MESSAGE>") && s.content.includes("sender="));
+
+  if (isSystemOrSubagentMsg) {
+    return null;
+  }
+
+  // 2. Check User Prompt & Loop Reset Intent (Absolute highest precedence on user turns)
+  if (s.source === "USER" || s.source === "USER_EXPLICIT" || s.type === "USER_INPUT") {
+    const text = typeof s.content === "string" ? s.content : "";
+    if (
+      s.step_index === 0 ||
+      /\b(loop\s*m[oóớơ>a-z]*|new\s*loop|start\s*loop|chạy\s*loop|bắt\s*đầu\s*loop|reset\s*loop)\b/i.test(text) ||
+      (/\bloop\b/i.test(text) && /\b(m[oóớơ>a-z]*|new|start|chạy|bắt\s*đầu|reset)\b/i.test(text))
+    ) {
+      return {
+        phase: "INITIALIZE",
+        evidence: s.step_index === 0 ? "user: initial prompt" : "user: new loop requested"
+      };
+    }
+    return null;
+  }
+
+  const content = typeof s.content === "string" ? s.content : "";
+  const thinking = typeof s.thinking === "string" ? s.thinking : "";
+
+  // 3. Tier 1 (Highest Precedence for Model Steps): Explicit Canonical Phase Tag
+  // Check content first (primary model output visible to user), then fallback to thinking
+  // Uses global regex to capture the last explicit phase declaration in transcript step
+  const tagRegex = /\[Phase:\s*(INITIALIZE|SPEC_GATE|ISOLATE|DETECT_STACKS|PLAN|EXECUTE|VERIFY|REALITY_CHECK|RELEASE_GATE|COMPLETE)\]/gi;
+  let lastTagMatch: RegExpExecArray | null = null;
+  let m: RegExpExecArray | null;
+  while ((m = tagRegex.exec(content)) !== null) {
+    lastTagMatch = m;
+  }
+  if (!lastTagMatch && thinking) {
+    while ((m = tagRegex.exec(thinking)) !== null) {
+      lastTagMatch = m;
+    }
+  }
+
+  if (lastTagMatch && lastTagMatch[1]) {
+    const p = lastTagMatch[1].toUpperCase() as LoopPhase;
+    if ((LOOP_PHASES as readonly string[]).includes(p)) {
+      return { phase: p, evidence: `tag: [Phase: ${p}]` };
+    }
+  }
+
   const candidates: PhaseDetectionResult[] = [];
 
-  // 1. Check Tool Calls (Highest precedence)
+  // 4. Tier 2: Check Deterministic Tool Calls
   if (Array.isArray(s.tool_calls) && s.tool_calls.length > 0) {
     for (const tc of s.tool_calls) {
       if (!tc || typeof tc !== "object") continue;
@@ -163,32 +218,9 @@ export function detectPhaseWithEvidenceFromTranscriptStep(step: unknown): PhaseD
     }
   }
 
-  // 2. Check Textual / Template Signals in content or thinking
-  // Subagent events, system messages, or notification envelopes must NEVER drive main loop phase transitions
-  const isSystemOrSubagentMsg =
-    s.type === "SYSTEM_MESSAGE" ||
-    s.source === "SYSTEM" ||
-    s.source === "SUBAGENT" ||
-    s.is_subagent === true ||
-    s.isSubagent === true ||
-    s.subagent === true ||
-    (typeof s.content === "string" && s.content.includes("<SYSTEM_MESSAGE>") && s.content.includes("sender="));
-
-  if (isSystemOrSubagentMsg) {
-    return null;
-  }
-
-  const content = typeof s.content === "string" ? s.content : "";
-  const thinking = typeof s.thinking === "string" ? s.thinking : "";
+  // 5. Tier 3: Template Markers
   const combined = content + "\n" + thinking;
-
   if (combined.trim()) {
-    const phaseMatch = /\[Phase:\s*(INITIALIZE|SPEC_GATE|ISOLATE|DETECT_STACKS|PLAN|EXECUTE|VERIFY|REALITY_CHECK|RELEASE_GATE|COMPLETE)\]/i.exec(combined);
-    if (phaseMatch && phaseMatch[1]) {
-      const p = phaseMatch[1].toUpperCase() as LoopPhase;
-      candidates.push({ phase: p, evidence: `tag: [Phase: ${p}]` });
-    }
-
     const templateMatch = /\[(?:Template|Workflow)\s+Applied\]:\s*Loaded\s+([^\s]+\.md)/i.exec(combined);
     if (templateMatch && templateMatch[1]) {
       const tName = templateMatch[1].toLowerCase();
@@ -214,41 +246,19 @@ export function detectPhaseWithEvidenceFromTranscriptStep(step: unknown): PhaseD
       candidates.push({ phase: "DETECT_STACKS", evidence: "list_dir package.json" });
     }
 
-    // Completion, release, and reality check detection from text ONLY for model/assistant output
+    // Reality check and release gate detection from text ONLY for model/assistant output (protects Golden Assertion 2)
     const isModelStep = s.source === "MODEL" || s.type === "PLANNER_RESPONSE";
     if (isModelStep) {
       if (
         /\b(all tests passed|tất cả tests đã pass|tests passed)\b/i.test(combined) ||
-        /\b(reality check|reality audit|kiểm tra thực tế|pre-completion audit)\b/i.test(combined) ||
-        /\[Phase:\s*REALITY_CHECK\]/i.test(combined)
+        /\b(reality check|reality audit|kiểm tra thực tế|pre-completion audit)\b/i.test(combined)
       ) {
         candidates.push({ phase: "REALITY_CHECK", evidence: "reality check reported" });
       } else if (
-        /\b(release gate|ready for release|chờ nghiệm thu|sign-off|human sign-off)\b/i.test(combined) ||
-        /\[Phase:\s*RELEASE_GATE\]/i.test(combined)
+        /\b(release gate|ready for release|chờ nghiệm thu|sign-off|human sign-off)\b/i.test(combined)
       ) {
         candidates.push({ phase: "RELEASE_GATE", evidence: "release gate reported" });
-      } else if (
-        /\b(hoàn thành|đã hoàn thành|hoàn tất|task completed|work is complete|successfully implemented|release complete|pipeline complete)\b/i.test(combined) ||
-        /\[Phase:\s*COMPLETE\]/i.test(combined)
-      ) {
-        candidates.push({ phase: "COMPLETE", evidence: "completion reported" });
       }
-    }
-  }
-
-  // 3. Check User Prompt & Loop Reset Intent (Absolute highest precedence)
-  if (s.source === "USER" || s.source === "USER_EXPLICIT" || s.type === "USER_INPUT") {
-    const text = typeof s.content === "string" ? s.content : "";
-    if (
-      s.step_index === 0 ||
-      /\b(loop\s*m[oóớơ>a-z]*|new\s*loop|start\s*loop|chạy\s*loop|bắt\s*đầu\s*loop|reset\s*loop)\b/i.test(text) ||
-      (/\bloop\b/i.test(text) && /\b(m[oóớơ>a-z]*|new|start|chạy|bắt\s*đầu|reset)\b/i.test(text))
-    ) {
-      return {
-        phase: "INITIALIZE",
-        evidence: s.step_index === 0 ? "user: initial prompt" : "user: new loop requested"
-      };
     }
   }
 
@@ -256,7 +266,7 @@ export function detectPhaseWithEvidenceFromTranscriptStep(step: unknown): PhaseD
     return null;
   }
 
-  // Assertion: Select the furthest credible phase in canonical order
+  // Assertion: Select the furthest credible phase from deterministic tool/template candidates
   // e.g. write_to_file + tsc -> VERIFY
   candidates.sort((a, b) => {
     const idxA = (LOOP_PHASES as readonly string[]).indexOf(a.phase);

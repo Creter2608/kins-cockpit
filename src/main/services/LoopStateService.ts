@@ -254,6 +254,8 @@ export class LoopStateService {
         autoAdvanced: Boolean(h.autoAdvanced)
       }));
 
+      const isNewRun = parsed.runId !== this.lastValidSnapshot.runId;
+
       const rawTest = (parsed as Record<string, unknown>).testSummary as Record<string, unknown> | undefined;
       const testSummary: LoopTestSummary = rawTest
         ? {
@@ -262,21 +264,23 @@ export class LoopStateService {
             failCount: Number(rawTest.failCount) || 0,
             lastRunAt: typeof rawTest.lastRunAt === "string" ? rawTest.lastRunAt : null
           }
-        : (this.lastValidSnapshot.testSummary || {
-            status: "idle",
-            passCount: 0,
-            failCount: 0,
-            lastRunAt: null
-          });
+        : (isNewRun
+            ? { status: "idle", passCount: 0, failCount: 0, lastRunAt: null }
+            : (this.lastValidSnapshot.testSummary || {
+                status: "idle",
+                passCount: 0,
+                failCount: 0,
+                lastRunAt: null
+              }));
 
       const rawCompliance = (parsed as Record<string, unknown>).architecturalCompliance as ArchitecturalCompliance | undefined;
-      const architecturalCompliance = rawCompliance ?? this.lastValidSnapshot.architecturalCompliance;
+      const architecturalCompliance = rawCompliance ?? (isNewRun ? undefined : this.lastValidSnapshot.architecturalCompliance);
 
       const rawAudit = (parsed as Record<string, unknown>).audit as AuditRecord | undefined;
-      const audit = rawAudit ?? this.lastValidSnapshot.audit;
+      const audit = rawAudit ?? (isNewRun ? undefined : this.lastValidSnapshot.audit);
 
       const rawApproval = (parsed as Record<string, unknown>).blueprintApproval as AuthenticatedBlueprintApproval | undefined;
-      const blueprintApproval = rawApproval ?? this.lastValidSnapshot.blueprintApproval;
+      const blueprintApproval = rawApproval ?? (isNewRun ? undefined : this.lastValidSnapshot.blueprintApproval);
 
       const rawGoldenSha = typeof (parsed as Record<string, unknown>).goldenSha256 === "string" ? String((parsed as Record<string, unknown>).goldenSha256) : undefined;
       const goldenSha256 = rawGoldenSha ?? this.lastValidSnapshot.goldenSha256;
@@ -741,7 +745,7 @@ export class LoopStateService {
   resetLoop(customRunId?: string): LoopResetResult {
     try {
       const initialPhase = LOOP_PHASES[0];
-      const runId = customRunId || `run-${Date.now()}`;
+      const runId = customRunId || `run-${crypto.randomUUID()}`;
       const freshState = {
         schemaVersion: 1,
         revision: 1,
@@ -874,7 +878,7 @@ export class LoopStateService {
 
     // 2. Explicit loop reset to INITIALIZE (e.g. user requested new loop)
     if (targetPhase === "INITIALIZE") {
-      this.resetLoop(`run-${Date.now()}`);
+      this.resetLoop();
       return true;
     }
 

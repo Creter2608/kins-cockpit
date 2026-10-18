@@ -10,6 +10,7 @@ import {
   parseGptTokenUsageLine,
   extractSubagentInvocations
 } from "../src/main/services/transcriptParsers.js";
+import { isLoopTransitionAllowed } from "../src/main/services/loopTransitionGuard.js";
 
 import {
   isVerificationCommand as legacyIsVerificationCommand,
@@ -239,3 +240,90 @@ test("transcriptParsers: extractSubagentInvocations parses structured and trunca
   assert.equal(extractedTrunc[1]?.role, "Agent2");
   assert.equal(extractedTrunc[1]?.prompt, "Prompt 2");
 });
+
+// Golden Assertion 1: Model step with [Phase: INITIALIZE] alongside Vietnamese conversation "hoàn thành" MUST resolve to INITIALIZE, NEVER COMPLETE.
+test("transcriptParsers: explicit [Phase: INITIALIZE] tag overrides conversational chatter containing 'hoàn thành'", () => {
+  const step = {
+    step_index: 10,
+    source: "MODEL",
+    type: "PLANNER_RESPONSE",
+    content: "Xin chào bạn, tôi sẽ hoàn thành công việc này ngay lập tức!\n[Phase: INITIALIZE]\n📋 [Template Applied]: Loaded implementer-prompt.md"
+  };
+
+  const detected = detectPhaseWithEvidenceFromTranscriptStep(step);
+  assert.ok(detected, "Should detect a phase");
+  assert.equal(detected.phase, "INITIALIZE", "Explicit tag INITIALIZE must win over 'hoàn thành'");
+  assert.equal(detected.evidence, "tag: [Phase: INITIALIZE]");
+
+  const simple = detectPhaseFromTranscriptStep(step);
+  assert.equal(simple, "INITIALIZE");
+});
+
+// Golden Assertion 2: Casual conversational phrases without explicit canonical tag must NEVER trigger COMPLETE.
+test("transcriptParsers: casual conversational phrases without explicit tags return null", () => {
+  const chatterSteps = [
+    { step_index: 11, source: "MODEL", type: "PLANNER_RESPONSE", content: "Tôi đã hoàn thành xong nhiệm vụ được giao." },
+    { step_index: 12, source: "MODEL", type: "PLANNER_RESPONSE", content: "Đã hoàn tất kiểm tra." },
+    { step_index: 13, source: "MODEL", type: "PLANNER_RESPONSE", content: "Tất cả các tác vụ đã hoàn thành tốt đẹp." }
+  ];
+
+  for (const step of chatterSteps) {
+    const detected = detectPhaseWithEvidenceFromTranscriptStep(step);
+    assert.equal(detected, null, `Step "${step.content}" should not trigger any phase transition`);
+  }
+});
+
+// Golden Assertion 3: Explicit tag [Phase: PLAN] in model step resolves to PLAN.
+test("transcriptParsers: explicit tag [Phase: PLAN] resolves to PLAN regardless of context", () => {
+  const step = {
+    step_index: 14,
+    source: "MODEL",
+    type: "PLANNER_RESPONSE",
+    content: "Chúng ta bắt đầu thôi.\n[Phase: PLAN]\n📋 [Template Applied]: Loaded plan-document-reviewer-prompt.md"
+  };
+
+  const detected = detectPhaseWithEvidenceFromTranscriptStep(step);
+  assert.ok(detected);
+  assert.equal(detected.phase, "PLAN");
+  assert.equal(detected.evidence, "tag: [Phase: PLAN]");
+});
+
+// Golden Assertion 4: LoopTransitionGuard blocks PLAN -> EXECUTE when blueprintApproval is missing.
+test("loopTransitionGuard: blocks transition PLAN -> EXECUTE without blueprint approval or code write", () => {
+  const mockState: any = {
+    runId: "run-test-guard",
+    currentPhase: "PLAN",
+    status: "running",
+    blueprintApproval: null
+  };
+
+  // Traversal towards COMPLETE should be blocked at PLAN -> EXECUTE
+  const allowedWithoutApproval = isLoopTransitionAllowed("PLAN", "EXECUTE", mockState, "tag: [Phase: COMPLETE]", "COMPLETE");
+  assert.equal(allowedWithoutApproval, false, "Must block PLAN -> EXECUTE without approval even if target is COMPLETE");
+
+  // With blueprint approval, it should be allowed
+  mockState.blueprintApproval = {
+    blueprintSha256: "sha256-hash-value",
+    runId: "run-test-guard"
+  };
+  const allowedWithApproval = isLoopTransitionAllowed("PLAN", "EXECUTE", mockState, "tag: [Phase: COMPLETE]", "COMPLETE");
+  assert.equal(allowedWithApproval, true, "Should allow PLAN -> EXECUTE when blueprint is approved");
+});
+
+// Golden Assertion 5: LoopTransitionGuard blocks advance to COMPLETE without closed audit or signoff.
+test("loopTransitionGuard: blocks advance to COMPLETE without closed audit or signoff", () => {
+  const mockState: any = {
+    runId: "run-test-guard",
+    currentPhase: "REALITY_CHECK",
+    status: "running",
+    audit: null
+  };
+
+  const blocked = isLoopTransitionAllowed("REALITY_CHECK", "COMPLETE", mockState, "some evidence", "COMPLETE");
+  assert.equal(blocked, false, "Must block transition to COMPLETE when audit is not closed");
+
+  mockState.audit = { status: "closed" };
+  const allowed = isLoopTransitionAllowed("REALITY_CHECK", "COMPLETE", mockState, "some evidence", "COMPLETE");
+  assert.equal(allowed, true, "Must allow transition to COMPLETE when audit is closed");
+});
+

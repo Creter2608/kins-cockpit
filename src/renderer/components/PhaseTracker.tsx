@@ -43,6 +43,7 @@ const PhaseTrackerComponent: React.FC<PhaseTrackerProps> = ({
   const [gateDecisionError, setGateDecisionError] = useState<string | null>(null);
   const [scoreExpanded, setScoreExpanded] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const prevRunIdRef = useRef<string>(loopState.runId);
 
   const isGate = loopState.currentPhase === "SPEC_GATE" || loopState.currentPhase === "RELEASE_GATE";
 
@@ -121,13 +122,20 @@ const PhaseTrackerComponent: React.FC<PhaseTrackerProps> = ({
 
   // Staggered Visual Catch-up: Smoothly step through intermediate phases (180ms delay)
   useEffect(() => {
-    const targetIdx = LOOP_PHASES.indexOf(loopState.currentPhase as LoopPhase);
-    const currIdx = LOOP_PHASES.indexOf(displayPhase as LoopPhase);
-
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
+
+    // Direct snap on runId change (reset or new task)
+    if (prevRunIdRef.current !== loopState.runId) {
+      prevRunIdRef.current = loopState.runId;
+      setDisplayPhase(loopState.currentPhase);
+      return;
+    }
+
+    const targetIdx = LOOP_PHASES.indexOf(loopState.currentPhase as LoopPhase);
+    const currIdx = LOOP_PHASES.indexOf(displayPhase as LoopPhase);
 
     // Direct snap if target moves backward, resets, or matches
     if (targetIdx === -1 || currIdx === -1 || targetIdx <= currIdx) {
@@ -158,7 +166,7 @@ const PhaseTrackerComponent: React.FC<PhaseTrackerProps> = ({
         timerRef.current = null;
       }
     };
-  }, [loopState.currentPhase]);
+  }, [loopState.currentPhase, loopState.runId]);
 
   const phases = computePhaseStatuses(displayPhase);
 
@@ -272,8 +280,8 @@ const PhaseTrackerComponent: React.FC<PhaseTrackerProps> = ({
           <span className="text-[10px] text-zinc-400 font-normal">Click to inspect</span>
         </div>
         {phases.map((item, idx) => {
-          const isCompleteTerminal = item.phase === "COMPLETE" && (loopState.status === "succeeded" || displayPhase === "COMPLETE");
-          const isCompleted = item.status === "completed" || isCompleteTerminal;
+          const isCompleteTerminal = item.phase === "COMPLETE" && loopState.status === "succeeded" && displayPhase === "COMPLETE";
+          const isCompleted = item.phase === "COMPLETE" ? isCompleteTerminal : item.status === "completed";
           const isCurrent = item.status === "current" && !isCompleteTerminal;
           const isSelected = selectedPhase === item.phase;
 
